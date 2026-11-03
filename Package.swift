@@ -37,7 +37,7 @@ targets += [
     ),
     .testTarget(
         name: "BallastMacTests",
-        dependencies: ["BallastMac"],
+        dependencies: ["BallastCore", "BallastMac"],
         path: "Tests/BallastMacTests",
         swiftSettings: [.swiftLanguageMode(.v6)]
     ),

@@ -1,3 +1,4 @@
+import BallastCore
 import CoreGraphics
 import Testing
 @testable import BallastMac
