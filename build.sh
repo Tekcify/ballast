@@ -28,7 +28,7 @@ fi
 IDENTITY="${BALLAST_SIGN_IDENTITY:-}"
 if [ -z "$IDENTITY" ]; then
   IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
-    | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')
+    | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/' || true)
 fi
 
 if [ -n "$IDENTITY" ]; then
