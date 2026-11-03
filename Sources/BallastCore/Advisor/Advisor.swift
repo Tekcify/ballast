@@ -54,7 +54,7 @@ package enum Advisor {
                 headline: input.pressure == .critical
                     ? "Memory is fully cooked"
                     : "Memory is getting cooked",
-                detail: "\(compressed) squeezed, \(swapped) on swap. macOS is sweating to keep up.",
+                detail: "\(compressed) squeezed, \(swapped) on swap. \(Platform.name) is sweating to keep up.",
                 severity: input.pressure == .critical ? .critical : .warning,
                 action: .none,
                 reclaimBytes: 0,
@@ -139,7 +139,7 @@ package enum Advisor {
                 clauses.append("it's hiding in the background")
             }
 
-            if Grouping.transient.contains(group.name) {
+            if Grouping.matches(Grouping.transient, group) {
                 score *= 0.3
                 clauses.append("it usually wraps up on its own")
             }
@@ -153,7 +153,7 @@ package enum Advisor {
                 score *= 0.4
             }
 
-            let livesInside = Grouping.holdsLiveState.contains(group.name)
+            let livesInside = Grouping.matches(Grouping.holdsLiveState, group)
             if livesInside {
                 score *= 0.5
                 clauses.append("it holds live state, so shut it down from inside instead of force quitting")

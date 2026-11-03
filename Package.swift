@@ -42,6 +42,50 @@ targets += [
         swiftSettings: [.swiftLanguageMode(.v6)]
     ),
 ]
+#elseif os(Windows)
+products += [
+    .executable(name: "Ballast", targets: ["BallastWindows"]),
+    .executable(name: "BallastDiagnostic", targets: ["BallastDiagnostic"]),
+]
+targets += [
+    // The Windows platform layer: Win32 probes, grouping, quitting, login item.
+    .target(
+        name: "BallastWindowsKit",
+        dependencies: ["BallastCore"],
+        path: "Sources/BallastWindowsKit",
+        swiftSettings: appSettings,
+        linkerSettings: [
+            .linkedLibrary("User32"),
+            .linkedLibrary("Advapi32"),
+            .linkedLibrary("Version"),
+        ]
+    ),
+    // The tray app. Linked as a GUI program so no console window opens.
+    .executableTarget(
+        name: "BallastWindows",
+        dependencies: ["BallastCore", "BallastWindowsKit"],
+        path: "Sources/BallastWindows",
+        swiftSettings: appSettings,
+        linkerSettings: [
+            .linkedLibrary("User32"),
+            .linkedLibrary("Shell32"),
+            .unsafeFlags(["-Xlinker", "/SUBSYSTEM:WINDOWS", "-Xlinker", "/ENTRY:mainCRTStartup"]),
+        ]
+    ),
+    // A console tool that prints one snapshot, like BALLAST_DIAGNOSTIC=1 on the Mac.
+    .executableTarget(
+        name: "BallastDiagnostic",
+        dependencies: ["BallastCore", "BallastWindowsKit"],
+        path: "Sources/BallastDiagnostic",
+        swiftSettings: appSettings
+    ),
+    .testTarget(
+        name: "BallastWindowsKitTests",
+        dependencies: ["BallastCore", "BallastWindowsKit"],
+        path: "Tests/BallastWindowsKitTests",
+        swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+]
 #endif
 
 let package = Package(
