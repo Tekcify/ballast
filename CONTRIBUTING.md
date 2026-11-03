@@ -28,12 +28,27 @@ development. Alerts then arrive as plain AppleScript notifications.
 The project is a Swift package, so you can also open the folder in Xcode with
 `xed .` and run the `Ballast` scheme.
 
+### On Windows
+
+You need Windows 10 or 11 on x64 and the Swift 6.4 toolchain, installed as
+described in [swift.org's Windows guide](https://www.swift.org/install/windows/).
+Then in PowerShell:
+
+```powershell
+swift build
+swift test
+.\build.ps1 -Run    # release build into build\Ballast, then start the tray app
+```
+
+VS Code with the Swift extension works well for editing on Windows.
+
 ## Project layout
 
 The code is split into a shared core and one app per platform. `BallastCore`
-holds the rules and data types that do not touch the operating system, so a
-future Windows app can build on the same logic. `BallastMac` is the macOS app,
-and `Package.swift` only includes it when building on a Mac.
+holds the rules and data types that do not touch the operating system, so both
+apps build on the same logic. `Package.swift` only includes the Mac targets on
+macOS and the Windows targets on Windows, so `swift build` builds the app for
+the machine you are on.
 
 | Folder | What lives there |
 | --- | --- |
@@ -49,19 +64,29 @@ and `Package.swift` only includes it when building on a Mac.
 | `Sources/BallastMac/Model` | The `Monitor` that drives the UI, login item |
 | `Sources/BallastMac/UI` | The SwiftUI panes and shared theme |
 | `Sources/BallastMac/Support` | Diagnostics and the shell helper |
+| `Sources/BallastWindowsKit` | Win32 probes, app grouping, quitting, login item and `WindowsMonitor` |
+| `Sources/BallastWindows` | The tray app and its message loop |
+| `Sources/BallastDiagnostic` | The Windows console diagnostic |
 
 Core types the apps use are marked `package`, which makes them visible to
-other targets in this package and nowhere else. A new core type or member the
-Mac app needs must be marked `package` too, including an explicit `init` for
+other targets in this package and nowhere else. A new core type or member an
+app needs must be marked `package` too, including an explicit `init` for
 structs, because Swift's automatic one stays internal to the core.
 
 The package uses Swift 6 language mode with the main actor as the default
-isolation. Plain data types read by actors need to be marked `nonisolated`.
+isolation. Plain data types read by actors need to be marked `nonisolated`, and
+so does anything Win32 calls back into, like window procedures and
+`EnumWindows` callbacks.
+
+Some rules differ per platform, such as the processes Ballast must never
+suggest quitting. Those sit behind `#if os(Windows)` in the core.
 
 ## Checking your change
 
-There is no unit test target yet. The app's diagnostic modes are the test
-harness, and every pull request should say which ones you ran.
+`swift test` runs the core tests on both platforms, plus the Mac or Windows
+tests for the machine you are on. The diagnostic modes cover what tests cannot,
+and every pull request should say which ones you ran. CI builds and tests both
+platforms on every push.
 
 ```sh
 swift build -c release
@@ -80,7 +105,20 @@ swift test                                          # heads-up timing, smart pic
   popover too, since offscreen rendering does not draw scroll view contents.
 - For storage changes, run the `scan` dry run and check every line it prints.
 
-A test target for the guard and the advisor would be a very welcome
+On Windows:
+
+```powershell
+.\build.ps1
+.\build\Ballast\BallastDiagnostic.exe     # memory snapshot, app tags and advice
+$env:BALLAST_SELFTEST = "1"; Start-Process .\build\Ballast\Ballast.exe -Wait
+```
+
+- For memory changes, compare the snapshot against Task Manager's Performance
+  and Details tabs.
+- For quitting changes, try an app with unsaved work and check it is left
+  alone while it asks to save.
+
+Tests for `DeletionGuard` and the advisor would be a very welcome
 contribution.
 
 ## Adding a cleanup target

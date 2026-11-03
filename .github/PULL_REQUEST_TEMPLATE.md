@@ -10,8 +10,9 @@
 - [ ] `BALLAST_DIAGNOSTIC=layout` passes (UI changes)
 - [ ] `BALLAST_DIAGNOSTIC=scan` output reviewed (storage changes)
 - [ ] Memory figures compared with Activity Monitor or `vm_stat` (memory changes)
+- [ ] `BallastDiagnostic.exe` compared with Task Manager (Windows memory changes)
 
-Tested on macOS:
+Tested on (macOS or Windows version):
 
 ## Storage changes only
 

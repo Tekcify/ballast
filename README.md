@@ -3,6 +3,7 @@
 [![CI](https://github.com/tekcify/ballast/actions/workflows/ci.yml/badge.svg)](https://github.com/tekcify/ballast/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-lightgrey.svg)
+![Windows 10+](https://img.shields.io/badge/Windows-10%2B-lightgrey.svg)
 
 ![The Ballast island dropping out of the notch to say memory is getting cooked](assets/island.png)
 
@@ -97,9 +98,39 @@ macOS remembers a notification denial per bundle identifier, and signing again l
 
 Ballast uses the [Aspekta](https://github.com/ivodolenc/aspekta) typeface when `AspektaVF.ttf` is in `~/Library/Fonts`, and the system font otherwise. The build bundles it automatically when it's there.
 
+## Windows
+
+Ballast has a first Windows version too. There's no notch on a PC, so it lives in the notification area by the clock and covers memory for now. Storage cleanup is still Mac only.
+
+- The tray icon turns into a warning sign when memory is under pressure and an error sign when it's fully cooked. Hover over it for the live readout.
+- Click it for the menu: how much memory is in use, the apps worth quitting, the biggest apps, a shortcut to Task Manager, pausing alerts for an hour, and Start Ballast at login.
+- When pressure holds, you get a notification naming the app to quit, and another when things calm down. It uses the same timing rules as the island.
+- Quitting asks the app's windows to close, the way the taskbar does, so it gets a chance to save. Six seconds later, any of its processes still running with no window are ended. If it's still showing a window, which usually means a "save changes?" prompt, Ballast leaves it alone and tells you.
+- It never suggests quitting anything in the Windows folder or a background service.
+
+### Install on Windows
+
+You need Windows 10 or 11 on x64 and the Swift 6.4 toolchain for Windows. Follow [swift.org's Windows install guide](https://www.swift.org/install/windows/), which also sets up the Visual Studio build tools Swift needs. Then, in PowerShell:
+
+```powershell
+git clone https://github.com/tekcify/ballast.git
+cd ballast
+.\build.ps1 -Run
+```
+
+`build.ps1` builds a release and gathers `Ballast.exe`, `BallastDiagnostic.exe` and the Swift runtime DLLs into `build\Ballast`. That folder runs on any Windows PC, so you can copy it anywhere. Leave off `-Run` to build without starting it.
+
+If you don't want to install Swift, every CI run on the Actions tab uploads the same folder as the `Ballast-Windows` artifact.
+
+The tray icon is a stock Windows icon for now, and notifications show up under Ballast's exe name.
+
 ## How it works
 
 ### Memory readings
+
+On Windows, system figures come from `GlobalMemoryStatusEx` and `GetPerformanceInfo`. Per app memory is the smaller of a process's private bytes and its working set, which comes close to Task Manager's Memory column. Windows has no kernel pressure level, so Ballast calls it getting cooked when 85% of RAM or of the commit limit is in use, and fully cooked at 95%. The page file figure is commit beyond physical RAM, which is an estimate.
+
+The rest of this section is about the Mac.
 
 System figures come from `host_statistics64`. Per app memory is `phys_footprint` from `proc_pid_rusage`, the same number as Activity Monitor's Memory column.
 
@@ -136,6 +167,14 @@ BALLAST_DIAGNOSTIC=1 /Applications/Ballast.app/Contents/MacOS/Ballast
 | `login-roundtrip` | Turns Start at login on, reads it back, then puts it back how it was |
 
 `BALLAST_SELFTEST=headsup` checks the running app instead. It confirms monitoring starts without the panel ever opening, the heads-up shows and hides, the island sits flush with the notch, and Open Ballast expands into the full panel. It exits 1 if any of that fails.
+
+On Windows the diagnostic is its own console program, because the tray app has no console window. It prints the same kind of snapshot, with every app's tags (`app`, `system`, `essential`) and the advice:
+
+```powershell
+.\build\Ballast\BallastDiagnostic.exe
+```
+
+Running `Ballast.exe` with `BALLAST_SELFTEST=1` set starts the tray app, refreshes, builds the menu without showing it, then exits. It exits 1 if any of that fails, and CI runs it on every push.
 
 Run the `scan` dry run before trusting a cleanup on a new machine, and `swift test` before sending a change.
 
