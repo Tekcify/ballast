@@ -139,7 +139,10 @@ package enum Grouping {
 package nonisolated enum Platform {
     #if os(Windows)
     package static let name = "Windows"
+    /// The Windows app has no storage scan yet, so point at the built-in tools.
+    package static let storageHint = "Storage Sense in Settings, System, Storage can clear temp files."
     #else
     package static let name = "macOS"
+    package static let storageHint = "Run a storage scan to see what can go."
     #endif
 }

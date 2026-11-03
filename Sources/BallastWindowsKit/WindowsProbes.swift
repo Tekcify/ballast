@@ -17,6 +17,8 @@ package nonisolated struct WindowsProcess: Sendable {
     /// Cumulative kernel plus user CPU time, in nanoseconds.
     package var cpuNanos: UInt64?
     package var startedAt: Date?
+    /// Services run in session 0, apart from anything a person signed in to.
+    package var isService = false
 }
 
 /// Everything one refresh reads from Windows.
@@ -152,6 +154,9 @@ nonisolated extension Probes {
             cpuNanos: nil,
             startedAt: nil
         )
+        var session: DWORD = 0
+        if ProcessIdToSessionId(pid, &session) { process.isService = session == 0 }
+
         guard let handle = OpenProcess(DWORD(PROCESS_QUERY_LIMITED_INFORMATION), false, pid) else {
             return process
         }

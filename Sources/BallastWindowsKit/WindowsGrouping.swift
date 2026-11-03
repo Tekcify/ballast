@@ -36,7 +36,8 @@ extension Grouping {
             accumulator.memory += process.memoryBytes
             accumulator.cpu += cpuPercents[process.pid] ?? 0
             let underWindows = systemRoot.map { process.path?.lowercased().hasPrefix($0) ?? false } ?? false
-            accumulator.systemOwned = accumulator.systemOwned || process.path == nil || underWindows
+            accumulator.systemOwned = accumulator.systemOwned
+                || process.path == nil || underWindows || process.isService
             if let started = process.startedAt { accumulator.started = min(accumulator.started, started) }
             buckets[key] = accumulator
         }

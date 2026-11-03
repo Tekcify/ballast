@@ -80,7 +80,7 @@ package enum Advisor {
                 id: "disk",
                 headline: "Only \(Fmt.bytes(disk.available)) free. Disk is down bad",
                 detail: reclaim.map { "A scan found \(Fmt.bytes($0)) of caches you can clear." }
-                    ?? "Run a storage scan to see what can go.",
+                    ?? Platform.storageHint,
                 severity: disk.available <= prefs.lowDiskBytes / 2 ? .critical : .warning,
                 action: .openStorage,
                 reclaimBytes: reclaim ?? 0,
