@@ -11,9 +11,12 @@ enum Pane: String, CaseIterable, Identifiable {
 struct PanelView: View {
     @Bindable var monitor: Monitor
     @State private var pane: Pane
+    /// Set for the menu bar popover, whose window has to be resized by hand.
+    var fitsWindow = false
 
-    init(monitor: Monitor, pane: Pane = .memory) {
+    init(monitor: Monitor, pane: Pane = .memory, fitsWindow: Bool = false) {
         self.monitor = monitor
+        self.fitsWindow = fitsWindow
         _pane = State(initialValue: pane)
     }
 
@@ -42,7 +45,13 @@ struct PanelView: View {
             tabs
         }
         .frame(width: Theme.panelWidth)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { panelHeight = $0 }
+        .background {
+            if fitsWindow { WindowFitter(height: panelHeight) }
+        }
     }
+
+    @State private var panelHeight: CGFloat = 0
 
     static let maxContentHeight: CGFloat = 580
     @State private var contentHeight: CGFloat = 0
@@ -69,6 +78,31 @@ struct PanelView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
+    }
+}
+
+/// MenuBarExtra sizes its window when it opens and never shrinks it again, so a
+/// shorter pane left a see-through band above the content. This resizes the
+/// window to fit whenever the content changes, keeping the top edge where it is.
+private struct WindowFitter: NSViewRepresentable {
+    /// The panel's own laid out height. The popover's hosting view reports no
+    /// fitting size of its own, so it cannot be asked.
+    var height: CGFloat
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let height = height
+        DispatchQueue.main.async { [weak view] in
+            guard height > 1, let window = view?.window else { return }
+            let content = NSSize(width: window.contentLayoutRect.width, height: height)
+            let target = window.frameRect(forContentRect: NSRect(origin: .zero, size: content))
+            guard abs(window.frame.height - target.height) > 0.5 else { return }
+            var frame = window.frame
+            frame.origin.y = frame.maxY - target.height
+            frame.size.height = target.height
+            window.setFrame(frame, display: true)
+        }
     }
 }
 

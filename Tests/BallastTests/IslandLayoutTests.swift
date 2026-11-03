@@ -23,8 +23,10 @@ struct IslandLayoutTests {
 
     @Test func restingPillWrapsTheCoreWithTwoWings() {
         let size = IslandLayout.compactSize(core: CGSize(width: 220, height: 38))
-        #expect(size.width == 220 + 2 * (IslandLayout.wing + IslandLayout.shoulder))
+        #expect(size.width == 220 + 2 * (IslandLayout.defaultWing + IslandLayout.shoulder))
         #expect(size.height == 38)
+        let tight = IslandLayout.compactSize(core: CGSize(width: 220, height: 38), wing: 32)
+        #expect(tight.width == 220 + 2 * (32 + IslandLayout.shoulder))
     }
 
     @Test func windowSitsFlushWithTheTopAndCentred() {
@@ -32,6 +34,24 @@ struct IslandLayoutTests {
         let frame = IslandLayout.windowFrame(size: CGSize(width: 480, height: 760), screen: screen)
         #expect(frame.maxY == screen.maxY)
         #expect(frame.midX == screen.midX)
+    }
+
+    @Test func readoutSpendsMostOfTheCycleOnMemory() {
+        let samples = (0..<120).map { IslandLayout.readout(at: Double($0) / 10 + 1_000_000) }
+        #expect(samples.filter { $0 == .memory }.count == 60)
+        #expect(samples.filter { $0 == .cpu }.count == 30)
+        #expect(samples.filter { $0 == .disk }.count == 30)
+        #expect(IslandLayout.readout(at: 0) == .memory)
+        #expect(IslandLayout.readout(at: 6) == .cpu)
+        #expect(IslandLayout.readout(at: 9) == .disk)
+        #expect(IslandLayout.readout(at: 12) == .memory)
+        #expect(IslandLayout.readout(at: -1) == .disk)
+    }
+
+    @Test func cpuUsageIsTheBusyShareOfNewTicks() {
+        let earlier = Probes.CPUTicks(busy: 1_000, total: 4_000)
+        #expect(Probes.CPUTicks(busy: 1_250, total: 5_000).usage(since: earlier) == 0.25)
+        #expect(Probes.CPUTicks(busy: 1_000, total: 4_000).usage(since: earlier) == nil)
     }
 
     @Test func alertOutranksActivitiesWhichOutrankTheReadout() {

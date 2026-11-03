@@ -14,9 +14,9 @@ It's Swift and SwiftUI with zero dependencies, and it never deletes anything you
 
 ## The island
 
-![The island in four moods: getting cooked, fully cooked, scanning and chillin again](assets/island-states.png)
+![The island cycling memory, CPU and free disk, then getting cooked, fully cooked, scanning and chillin again](assets/island-states.png)
 
-The island hugs the notch and keeps a tiny live readout on either side of it. Orange flame means memory is under pressure, red means it's fully cooked, a ring means a scan or cleanup is running, and a green check means you're good again.
+The island hugs the notch and keeps a tiny live readout on either side of it. While things are chill it cycles through memory, CPU and free disk, with memory getting most of the airtime, and the icon morphs and the numbers roll as it goes. When something needs you it switches over: an orange flame means memory is under pressure, red means it's fully cooked, a ring means a scan or cleanup is running, and a green check means you're good again.
 
 Hover over it and it opens up with the full story. **Open Ballast** turns it into the whole panel, and **Storage** takes you straight to cleanup. It never steals focus, so whatever you're typing keeps the keyboard.
 
@@ -31,7 +31,7 @@ Everything lives in the Heads-up page of Settings, with a live preview that redr
 - Show it on the notch display, the menu bar display, or wherever your mouse is
 - Expand on hover, pop open on its own, and a small haptic tap on the trackpad
 - Live activities for scans and cleanups
-- An always-on memory readout by the notch, if you like having it there
+- The live readout itself, if you'd rather the notch stay empty until something happens
 
 Displays without a notch get a matching pill hanging from the top of the screen. If you'd rather keep it low key, switch the look to Card and it floats under the menu bar icon instead.
 
@@ -79,7 +79,7 @@ cd ballast
 ./build.sh
 ```
 
-`build.sh` builds a release, assembles `Ballast.app`, signs it and copies it to `/Applications` (or `~/Applications` if that isn't writable). Open it once and it lives in your menu bar from then on. Turn on "Start Ballast at login" in Settings and it'll be there after every restart; if macOS wants your OK first, Ballast tells you and links straight to Login Items. Use `./build.sh --no-install` to leave the app in `build/` instead.
+`build.sh` builds a release, assembles `Ballast.app`, signs it and copies it to `/Applications` (or `~/Applications` if that isn't writable). Open it once and it lives in your menu bar from then on. It also turns on "Start Ballast at login" the first time it runs from Applications, so it's back after every restart; switch that off in Settings and it stays off. If macOS wants your OK first, Ballast tells you and links straight to Login Items. Use `./build.sh --no-install` to leave the app in `build/` instead.
 
 ### Signing and notifications
 
@@ -132,6 +132,8 @@ BALLAST_DIAGNOSTIC=1 /Applications/Ballast.app/Contents/MacOS/Ballast
 | `notify` | Sends a test alert and reports which delivery path carried it |
 | `headsup` | Shows the heads-up card for ten seconds with pressure faked, so you can see it without running out of memory |
 | `readme` | Renders the screenshots in this README from sample data into `assets/`, or `BALLAST_OUT` if set |
+| `login` | Prints whether Start at login is on, off, or waiting on your OK in System Settings |
+| `login-roundtrip` | Turns Start at login on, reads it back, then puts it back how it was |
 
 `BALLAST_SELFTEST=headsup` checks the running app instead. It confirms monitoring starts without the panel ever opening, the heads-up shows and hides, the island sits flush with the notch, and Open Ballast expands into the full panel. It exits 1 if any of that fails.
 

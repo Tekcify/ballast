@@ -31,10 +31,17 @@ final class Monitor {
     var lastReport: CleanReport?
     var statusLine: String?
     var lastQuitOutcome: String?
+    /// Whole-machine CPU use between the last two samples, 0 to 1.
+    var cpuUsage: Double?
+    private var previousTicks: Probes.CPUTicks?
+    /// Held here rather than read from `SMAppService` in each view, because the
+    /// service is not observable and a toggle bound to it never redraws.
+    var loginStatus: LoginItem.Status = LoginItem.status
 
-    let prefs = Preferences()
+    let prefs: Preferences
 
-    init() {
+    init(prefs: Preferences = Preferences()) {
+        self.prefs = prefs
         lastScanAt = UserDefaults.standard.object(forKey: "lastScanAt") as? Date
         restoreLastScan()
     }
@@ -60,6 +67,7 @@ final class Monitor {
     /// start the loop once.
     func start() {
         guard loop == nil else { return }
+        applyLoginDefault()
         applyHeadsUpSettings()
         alerter.start { [weak self] name, pids in
             Task { @MainActor in await self?.quit(name: name, pids: pids) }
@@ -85,6 +93,7 @@ final class Monitor {
         var swap: Probes.SwapSample?
         var pressure: Probes.Pressure
         var disk: Probes.DiskSample?
+        var cpu: Probes.CPUTicks?
         var processes: [Probes.RawProcess]
         var workingDirectories: [pid_t: String]
         var at: Date
@@ -111,6 +120,7 @@ final class Monitor {
             swap: Probes.swapSample(),
             pressure: Probes.pressure(),
             disk: Probes.diskSample(),
+            cpu: Probes.cpuTicks(),
             processes: processes,
             workingDirectories: directories,
             at: Date()
@@ -125,6 +135,10 @@ final class Monitor {
         pressure = (previewUntil.map { sample.at < $0 } ?? false) ? .warning : sample.pressure
         disk = sample.disk
         lastSampledAt = sample.at
+        if let ticks = sample.cpu {
+            if let previous = previousTicks { cpuUsage = ticks.usage(since: previous) ?? cpuUsage }
+            previousTicks = ticks
+        }
 
         let cpu = cpuPercents(sample)
         let workspace = NSWorkspace.shared
@@ -443,6 +457,28 @@ final class Monitor {
 
     func revealInFinder(_ path: String) {
         NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: (path as NSString).deletingLastPathComponent)
+    }
+
+    /// Start at login is on by default. It is switched on once, the first time
+    /// Ballast runs from an Applications folder, so turning it off later sticks
+    /// and a build run from elsewhere never registers itself.
+    private func applyLoginDefault() {
+        let key = "startAtLoginDefaultApplied"
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: key), LoginItem.isInstalledCopy else { return }
+        defaults.set(true, forKey: key)
+        if LoginItem.status == .off { setStartAtLogin(true) }
+    }
+
+    func setStartAtLogin(_ enabled: Bool) {
+        LoginItem.setEnabled(enabled)
+        refreshLoginStatus()
+    }
+
+    /// Re-reads the status, which can change in System Settings while Ballast runs.
+    func refreshLoginStatus() {
+        let status = LoginItem.status
+        if loginStatus != status { loginStatus = status }
     }
 
     func openActivityMonitor() {

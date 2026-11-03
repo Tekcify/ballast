@@ -16,7 +16,7 @@ struct BallastApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            PanelView(monitor: monitor)
+            PanelView(monitor: monitor, fitsWindow: true)
                 .task { monitor.start() }
         } label: {
             MenuBarLabel(monitor: monitor)

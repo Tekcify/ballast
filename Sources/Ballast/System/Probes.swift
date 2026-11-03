@@ -64,6 +64,34 @@ nonisolated enum Probes {
         return SwapSample(total: usage.xsu_total, used: usage.xsu_used, encrypted: usage.xsu_encrypted != 0)
     }
 
+    /// Cumulative CPU ticks across every core. Usage is the busy share of the
+    /// ticks between two samples.
+    struct CPUTicks: Sendable {
+        var busy: UInt64
+        var total: UInt64
+
+        func usage(since earlier: CPUTicks) -> Double? {
+            guard total > earlier.total, busy >= earlier.busy else { return nil }
+            return min(Double(busy - earlier.busy) / Double(total - earlier.total), 1)
+        }
+    }
+
+    nonisolated static func cpuTicks() -> CPUTicks? {
+        var info = host_cpu_load_info()
+        var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let rc = withUnsafeMutablePointer(to: &info) { ptr in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &count)
+            }
+        }
+        guard rc == KERN_SUCCESS else { return nil }
+        let user = UInt64(info.cpu_ticks.0)
+        let system = UInt64(info.cpu_ticks.1)
+        let idle = UInt64(info.cpu_ticks.2)
+        let nice = UInt64(info.cpu_ticks.3)
+        return CPUTicks(busy: user + system + nice, total: user + system + idle + nice)
+    }
+
     /// Kernel memory pressure: 1 normal, 2 warning, 4 critical.
     enum Pressure: Int, Sendable, Comparable {
         case normal = 1, warning = 2, critical = 4

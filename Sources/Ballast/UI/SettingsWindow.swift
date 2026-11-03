@@ -32,14 +32,18 @@ final class SettingsWindowController {
 
     func show(monitor: Monitor, section: SettingsSection? = nil) {
         if let section { selection.section = section }
-        let window = window ?? makeWindow(monitor: monitor)
+        let window = window ?? Self.makeWindow(
+            rootView: SettingsWindowView(monitor: monitor, selection: selection)
+        )
         self.window = window
         if !window.isVisible { window.center() }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
 
-    private func makeWindow(monitor: Monitor) -> NSWindow {
+    /// Shared with the render diagnostic, so previews get the real title bar
+    /// and the safe area it adds above the content.
+    static func makeWindow(rootView: some View) -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
@@ -50,7 +54,7 @@ final class SettingsWindowController {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: SettingsWindowView(monitor: monitor, selection: selection))
+        window.contentView = NSHostingView(rootView: rootView)
         return window
     }
 }
@@ -69,7 +73,7 @@ struct SettingsWindowView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             sidebar
-            Rectangle().fill(Theme.hairline).frame(width: 1)
+            Rectangle().fill(Theme.hairline).frame(width: 1).ignoresSafeArea()
             if staticRender {
                 page
             } else {
@@ -88,9 +92,9 @@ struct SettingsWindowView: View {
                 .font(Theme.font(20, 620))
             detail
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 40)
-        .padding(.bottom, 28)
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -113,7 +117,7 @@ struct SettingsWindowView: View {
             Spacer()
         }
         .padding(.horizontal, 10)
-        .padding(.top, 44)
+        .padding(.top, 8)
         .frame(width: 190)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.fill)
@@ -232,9 +236,12 @@ struct SettingsSlider: View {
             if staticRender {
                 renderedSlider
             } else {
-                Slider(value: $value, in: range, step: step)
-                    .tint(Theme.appMemory)
-                    .controlSize(.small)
+                Slider(
+                    value: Binding(get: { value }, set: { value = ($0 / step).rounded() * step }),
+                    in: range
+                )
+                .tint(Theme.appMemory)
+                .controlSize(.small)
             }
             Text("\(Int(value.rounded())) \(unit)")
                 .font(Theme.number)
@@ -272,9 +279,9 @@ struct SettingsDivider: View {
 
 private struct GeneralSettings: View {
     var monitor: Monitor
-    @State private var loginStatus = LoginItem.status
 
     private var prefs: Preferences { monitor.prefs }
+    private var loginStatus: LoginItem.Status { monitor.loginStatus }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -284,10 +291,7 @@ private struct GeneralSettings: View {
                     detail: loginDetail,
                     isOn: Binding(
                         get: { loginStatus != .off },
-                        set: {
-                            LoginItem.setEnabled($0)
-                            loginStatus = LoginItem.status
-                        }
+                        set: { monitor.setStartAtLogin($0) }
                     )
                 )
                 if loginStatus == .needsApproval {
@@ -311,7 +315,7 @@ private struct GeneralSettings: View {
                 )
                 SettingsDivider()
                 ValueStepper(
-                        emphasized: true,
+                    emphasized: true,
                     label: "Refresh memory every",
                     value: Binding(get: { prefs.refreshSeconds }, set: { prefs.refreshSeconds = $0 }),
                     range: 2...60, step: 1, format: { "\(Int($0)) s" }
@@ -326,9 +330,9 @@ private struct GeneralSettings: View {
                 )
             }
         }
-        .onAppear { loginStatus = LoginItem.status }
+        .onAppear { monitor.refreshLoginStatus() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            loginStatus = LoginItem.status
+            monitor.refreshLoginStatus()
         }
     }
 
@@ -389,15 +393,17 @@ private struct HeadsUpSettings: View {
                 SettingsGroup(title: "Shape", footer: notchFooter) {
                     SettingsToggle(
                         title: "Match my notch",
-                        detail: "Sizes the island to the notch so it looks like part of the screen.",
+                        detail: "Sizes the middle of the island to your notch. The readouts sit either side of it.",
                         isOn: bind(\.islandMatchNotch)
                     )
                     SettingsDivider()
-                    SettingsSlider(title: "Width", value: bind(\.islandWidth), range: 120...320,
+                    SettingsSlider(title: "Width", value: bind(\.islandWidth), range: 100...320,
                                    enabled: !prefs.islandMatchNotch)
                     SettingsSlider(title: "Height", value: bind(\.islandHeight), range: 22...48,
                                    enabled: !prefs.islandMatchNotch)
                     SettingsDivider()
+                    SettingsSlider(title: "Readout space", value: bind(\.islandWingWidth),
+                                   range: IslandLayout.wingRange)
                     SettingsSlider(title: "Corner radius", value: bind(\.islandCornerRadius), range: 0...24)
                 }
 
@@ -428,8 +434,8 @@ private struct HeadsUpSettings: View {
                     )
                     SettingsDivider()
                     SettingsToggle(
-                        title: "Always show memory",
-                        detail: "Keeps a small readout by the notch, even when things are chill.",
+                        title: "Live readout",
+                        detail: "Cycles memory, CPU and free disk by the notch while things are chill.",
                         isOn: bind(\.islandAlwaysOn)
                     )
                     SettingsDivider()
@@ -570,7 +576,7 @@ struct IslandPreview: View {
     }
 
     var body: some View {
-        let size = IslandLayout.compactSize(core: core)
+        let size = IslandLayout.compactSize(core: core, wing: prefs.islandWingWidth)
         ZStack(alignment: .top) {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color(white: 0.14))
@@ -587,12 +593,12 @@ struct IslandPreview: View {
                         Image(systemName: "flame.fill")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Theme.warning)
-                            .frame(width: IslandLayout.wing)
+                            .frame(width: prefs.islandWingWidth)
                         Color.clear.frame(width: core.width)
                         Text("82%")
                             .font(Theme.font(12, 600, tabular: true))
                             .foregroundStyle(Theme.warning)
-                            .frame(width: IslandLayout.wing)
+                            .frame(width: prefs.islandWingWidth)
                     }
                     .padding(.horizontal, IslandLayout.shoulder)
                 }
@@ -648,7 +654,7 @@ private struct AlertSettings: View {
 
             SettingsGroup(title: "Repeats", footer: "The heads-up stays quiet for 15 minutes after you dismiss it, unless things get worse.") {
                 ValueStepper(
-                        emphasized: true,
+                    emphasized: true,
                     label: "Repeat the same banner at most every",
                     value: Binding(get: { prefs.cooldownMinutes }, set: { prefs.cooldownMinutes = $0 }),
                     range: 5...180, step: 5, format: { "\(Int($0)) min" }
@@ -673,7 +679,7 @@ private struct StorageSettings: View {
                 )
                 SettingsDivider()
                 ValueStepper(
-                        emphasized: true,
+                    emphasized: true,
                     label: "Measure every",
                     value: Binding(get: { prefs.autoScanHours }, set: { prefs.autoScanHours = $0 }),
                     range: 6...168, step: 6, format: { "\(Int($0)) h" }

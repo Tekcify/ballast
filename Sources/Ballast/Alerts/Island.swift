@@ -5,7 +5,9 @@ import SwiftUI
 /// arithmetic can be tested.
 nonisolated enum IslandLayout {
     /// Room either side of the notch for the live activity's icon and value.
-    static let wing: CGFloat = 58
+    /// This is what makes the island wider than the notch itself.
+    static let defaultWing: CGFloat = 48
+    static let wingRange: ClosedRange<Double> = 32...80
     /// Concave top corners that let the island flow out of the bezel.
     static let shoulder: CGFloat = 6
     static let expandedShoulder: CGFloat = 10
@@ -15,6 +17,25 @@ nonisolated enum IslandLayout {
 
     enum Mode: Equatable, Sendable {
         case alert, recovered, cleaning, scanning, glance
+    }
+
+    /// What the resting island shows when nothing needs attention.
+    enum Readout: Equatable, Sendable, CaseIterable {
+        case memory, cpu, disk
+    }
+
+    /// Memory holds the stage most of the time; CPU and free disk take turns.
+    static let readoutCycle: [(readout: Readout, seconds: Double)] = [(.memory, 6), (.cpu, 3), (.disk, 3)]
+
+    static func readout(at time: TimeInterval) -> Readout {
+        let period = readoutCycle.reduce(0) { $0 + $1.seconds }
+        var offset = time.truncatingRemainder(dividingBy: period)
+        if offset < 0 { offset += period }
+        for step in readoutCycle {
+            if offset < step.seconds { return step.readout }
+            offset -= step.seconds
+        }
+        return .memory
     }
 
     /// Width and height of the hardware notch, or nil when the display has none.
@@ -31,7 +52,7 @@ nonisolated enum IslandLayout {
         matchNotch ? (notch ?? fallbackCore) : custom
     }
 
-    static func compactSize(core: CGSize) -> CGSize {
+    static func compactSize(core: CGSize, wing: CGFloat = defaultWing) -> CGSize {
         CGSize(width: core.width + 2 * (wing + shoulder), height: core.height)
     }
 
@@ -63,6 +84,8 @@ final class IslandModel {
     var showingPanel = false
     var panelPane: Pane = .memory
     var hovering = false
+    /// Holds one readout still, for screenshots.
+    var pinnedReadout: IslandLayout.Readout?
     var notch: CGSize?
 }
 
@@ -471,7 +494,7 @@ struct IslandView: View {
         if !model.presented { return core.width }
         if model.showingPanel { return Theme.panelWidth + 2 * IslandLayout.expandedShoulder }
         if model.expanded { return IslandLayout.expandedWidth }
-        return IslandLayout.compactSize(core: core).width
+        return IslandLayout.compactSize(core: core, wing: prefs.islandWingWidth).width
     }
 
     private var shape: IslandShape {
@@ -535,15 +558,86 @@ struct IslandView: View {
 
     // MARK: Compact
 
+    @ViewBuilder
     private var compact: some View {
+        if mode == .glance || mode == nil {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let readout = model.pinnedReadout
+                    ?? IslandLayout.readout(at: context.date.timeIntervalSinceReferenceDate)
+                wings(leading: readoutIcon(readout), trailing: readoutValue(readout))
+                    .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.82), value: readout)
+            }
+        } else {
+            wings(leading: leading, trailing: trailing)
+        }
+    }
+
+    private func wings(leading: some View, trailing: some View) -> some View {
         HStack(spacing: 0) {
-            leading.frame(width: IslandLayout.wing)
+            leading.frame(width: prefs.islandWingWidth)
             Color.clear.frame(width: core.width)
-            trailing.frame(width: IslandLayout.wing)
+            trailing.frame(width: prefs.islandWingWidth)
         }
         .padding(.horizontal, IslandLayout.shoulder)
         .font(Theme.font(12, 600, tabular: true))
         .foregroundStyle(.white)
+    }
+
+    // MARK: Live readout
+
+    private func readoutIcon(_ readout: IslandLayout.Readout) -> some View {
+        Image(systemName: readout.symbol)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(readoutTint(readout))
+            .contentTransition(.symbolEffect(.replace))
+            .accessibilityHidden(true)
+    }
+
+    /// The value slides in from below when the readout changes, and its digits
+    /// roll when it updates in place.
+    private func readoutValue(_ readout: IslandLayout.Readout) -> some View {
+        let value = readoutText(readout)
+        return ZStack {
+            Text(value)
+                .foregroundStyle(readoutTint(readout))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .contentTransition(.numericText())
+                .animation(reduceMotion ? nil : .snappy, value: value)
+                .id(readout)
+                .transition(reduceMotion ? .opacity : .asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .move(edge: .top).combined(with: .opacity)
+                ))
+        }
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .accessibilityLabel("\(readout.label) \(value)")
+    }
+
+    private func readoutText(_ readout: IslandLayout.Readout) -> String {
+        switch readout {
+        case .memory: Fmt.percent(monitor.usedFraction)
+        case .cpu: monitor.cpuUsage.map(Fmt.percent) ?? "…"
+        case .disk: monitor.disk.map { Fmt.bytes($0.available) } ?? "…"
+        }
+    }
+
+    private func readoutTint(_ readout: IslandLayout.Readout) -> Color {
+        let calm = Color.white.opacity(0.85)
+        switch readout {
+        case .memory:
+            switch monitor.pressure {
+            case .normal: return calm
+            case .warning: return Theme.warning
+            case .critical: return Theme.critical
+            }
+        case .cpu:
+            return (monitor.cpuUsage ?? 0) >= 0.85 ? Theme.warning : calm
+        case .disk:
+            guard let disk = monitor.disk else { return calm }
+            return disk.available <= prefs.lowDiskBytes ? Theme.warning : calm
+        }
     }
 
     @ViewBuilder
@@ -558,7 +652,7 @@ struct IslandView: View {
         case .cleaning:
             symbol("sparkles", tint: Theme.positive)
         case .glance, nil:
-            symbol("memorychip", tint: .white.opacity(0.85))
+            readoutIcon(.memory)
         }
     }
 
@@ -576,7 +670,7 @@ struct IslandView: View {
                     .font(Theme.font(10.5, 560, tabular: true))
             }
         case .glance, nil:
-            Text(Fmt.percent(monitor.usedFraction)).foregroundStyle(.white.opacity(0.85))
+            readoutValue(.memory)
         }
     }
 
@@ -606,7 +700,25 @@ struct IslandView: View {
         case .scanning, .cleaning:
             ActivitySummary(monitor: monitor, cleaning: mode == .cleaning, onOpen: onStorage)
         case .glance:
-            GlanceSummary(monitor: monitor, onOpen: onOpen)
+            GlanceSummary(monitor: monitor, onOpen: onOpen, onStorage: onStorage)
+        }
+    }
+}
+
+extension IslandLayout.Readout {
+    var symbol: String {
+        switch self {
+        case .memory: "memorychip"
+        case .cpu: "cpu"
+        case .disk: "internaldrive"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .memory: "Memory"
+        case .cpu: "CPU"
+        case .disk: "Free disk"
         }
     }
 }
@@ -685,23 +797,21 @@ private struct ActivitySummary: View {
 private struct GlanceSummary: View {
     var monitor: Monitor
     var onOpen: () -> Void
+    var onStorage: () -> Void
+
+    private var diskUsed: Double? {
+        monitor.disk.map { $0.total == 0 ? 0 : Double($0.used) / Double($0.total) }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .lastTextBaseline, spacing: 7) {
-                Text(monitor.vm.map { Fmt.bytes($0.usedBytes) } ?? "…")
-                    .font(Theme.font(22, 600, tabular: true))
-                Text(monitor.vm.map { "of \(Fmt.bytes($0.totalBytes)) · \(monitor.pressure.label)" } ?? "")
-                    .font(Theme.body)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
-            if let vm = monitor.vm, vm.totalBytes > 0 {
-                MeterBar(segments: [
-                    .init(color: Theme.appMemory, fraction: Double(vm.appBytes) / Double(vm.totalBytes)),
-                    .init(color: Theme.wired, fraction: Double(vm.wiredBytes) / Double(vm.totalBytes)),
-                    .init(color: Theme.compressed, fraction: Double(vm.compressedBytes) / Double(vm.totalBytes)),
-                ], height: 5)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                StatTile(readout: .memory, value: Fmt.percent(monitor.usedFraction),
+                         detail: monitor.pressure.label, fraction: monitor.usedFraction)
+                StatTile(readout: .cpu, value: monitor.cpuUsage.map(Fmt.percent) ?? "…",
+                         detail: "all cores", fraction: monitor.cpuUsage)
+                StatTile(readout: .disk, value: monitor.disk.map { Fmt.bytes($0.available) } ?? "…",
+                         detail: "free", fraction: diskUsed)
             }
             VStack(spacing: 6) {
                 ForEach(monitor.listedGroups.filter { !Grouping.isEssential($0) }.prefix(3)) { group in
@@ -713,10 +823,45 @@ private struct GlanceSummary: View {
                     }
                 }
             }
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
+                QuietButton(title: "Storage", action: onStorage)
                 PrimaryButton(title: "Open Ballast", action: onOpen)
             }
         }
+    }
+}
+
+/// One of the three things the island cycles through, laid out side by side.
+private struct StatTile: View {
+    var readout: IslandLayout.Readout
+    var value: String
+    var detail: String
+    var fraction: Double?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
+                Image(systemName: readout.symbol)
+                    .font(.system(size: 10, weight: .semibold))
+                Text(readout.label)
+                    .font(Theme.caption)
+            }
+            .foregroundStyle(.secondary)
+            Text(value)
+                .font(Theme.font(17, 600, tabular: true))
+                .contentTransition(.numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            MeterBar(segments: [.init(color: Theme.appMemory, fraction: fraction ?? 0)], height: 3)
+            Text(detail)
+                .font(Theme.font(9.5, 460))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.fill))
+        .accessibilityElement(children: .combine)
     }
 }

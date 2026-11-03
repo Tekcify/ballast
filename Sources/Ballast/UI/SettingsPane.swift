@@ -36,10 +36,10 @@ struct SettingsPane: View {
                                          set: { prefs.showPercentInMenuBar = $0 }))
                 }
                 SettingRow(label: "Start at login") {
-                    Switch(isOn: Binding(get: { LoginItem.status != .off },
-                                         set: { LoginItem.setEnabled($0) }))
+                    Switch(isOn: Binding(get: { monitor.loginStatus != .off },
+                                         set: { monitor.setStartAtLogin($0) }))
                 }
-                if LoginItem.status == .needsApproval {
+                if monitor.loginStatus == .needsApproval {
                     Text("Waiting on your OK in System Settings, Login Items.")
                         .font(Theme.caption)
                         .foregroundStyle(Theme.warning)
@@ -59,5 +59,6 @@ struct SettingsPane: View {
                 }
             }
         }
+        .onAppear { monitor.refreshLoginStatus() }
     }
 }

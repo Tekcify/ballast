@@ -14,6 +14,11 @@ enum Diagnostic {
         if mode == "layout" { runLayout() }
         if mode == "headsup" { runHeadsUp() }
         if mode == "readme" { ReadmeShots.run() }
+        if mode == "login" {
+            print("LOGIN \(LoginItem.status) bundle \(Bundle.main.bundleIdentifier ?? "none")")
+            exit(0)
+        }
+        if mode == "login-roundtrip" { runLoginRoundTrip() }
         guard mode == "1" else { return }
 
         guard let vm = Probes.vmSample() else {
@@ -216,9 +221,24 @@ enum Diagnostic {
                 try? await Task.sleep(for: .milliseconds(600))
                 print("SELFTEST island-after-collapse \(island.frame.map { NSStringFromRect($0) } ?? "hidden") expanded \(island.model.expanded) hovering \(island.model.hovering) pointer \(NSStringFromPoint(NSEvent.mouseLocation))")
             }
-            failed = !(sampled && button && visible && closed && expanded && placed)
+            let cpu = monitor.cpuUsage
+            print("SELFTEST cpu \(cpu.map(Fmt.percent) ?? "missing") live-readout \(monitor.prefs.islandAlwaysOn)")
+            failed = !(sampled && button && visible && closed && expanded && placed && cpu != nil)
             exit(failed ? 1 : 0)
         }
+    }
+
+    /// Turns the login item on, reads it back, then puts it back how it was.
+    private static func runLoginRoundTrip() {
+        let before = LoginItem.status
+        LoginItem.setEnabled(true)
+        let on = LoginItem.status
+        print("LOGIN before \(before) after-enable \(on) error \(LoginItem.lastError ?? "none")")
+        if before == .off {
+            LoginItem.setEnabled(false)
+            print("LOGIN restored \(LoginItem.status) error \(LoginItem.lastError ?? "none")")
+        }
+        exit(on == .off ? 1 : 0)
     }
 
     private actor Collector {
@@ -235,6 +255,7 @@ enum Diagnostic {
         Task { @MainActor in
             await monitor.refresh()
             var failed = false
+            var ideals: [Pane: CGFloat] = [:]
             for pane in Pane.allCases {
                 let controller = NSHostingController(rootView: PanelView(monitor: monitor, pane: pane))
                 let window = NSWindow(contentViewController: controller)
@@ -245,9 +266,28 @@ enum Diagnostic {
                 }
                 let ideal = controller.view.fittingSize
                 let minimum = controller.sizeThatFits(in: CGSize(width: Theme.panelWidth, height: 0))
+                ideals[pane] = ideal.height
                 print("LAYOUT \(pane.rawValue) ideal \(Int(ideal.height)) minimum \(Int(minimum.height))")
                 if minimum.height < 150 { failed = true }
             }
+
+            // The popover's window never shrinks on its own. Start it too tall,
+            // switch to a shorter pane, and expect it to fit with the top held.
+            let host = NSHostingView(rootView: AnyView(PanelView(monitor: monitor, pane: .memory, fitsWindow: true)))
+            host.sizingOptions = []
+            let window = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            window.setFrame(NSRect(x: 200, y: 100, width: Theme.panelWidth, height: 760), display: true)
+            let top = window.frame.maxY
+            try? await Task.sleep(for: .milliseconds(400))
+            let memoryHeight = window.frame.height
+            host.rootView = AnyView(PanelView(monitor: monitor, pane: .settings, fitsWindow: true).id("settings"))
+            try? await Task.sleep(for: .milliseconds(400))
+            let settingsHeight = window.frame.height
+            let fitted = abs(settingsHeight - (ideals[.settings] ?? 0)) < 2
+            let held = abs(window.frame.maxY - top) < 1
+            print("LAYOUT popover memory \(Int(memoryHeight)) then settings \(Int(settingsHeight)) fitted \(fitted) top-held \(held)")
+            if !(fitted && held && settingsHeight < memoryHeight) { failed = true }
             exit(failed ? 1 : 0)
         }
         RunLoop.main.run()

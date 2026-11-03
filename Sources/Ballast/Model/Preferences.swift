@@ -3,7 +3,7 @@ import Observation
 
 @Observable
 final class Preferences {
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
     private func double(_ key: String, _ fallback: Double) -> Double {
         defaults.object(forKey: key) as? Double ?? fallback
@@ -92,6 +92,10 @@ final class Preferences {
     var islandHeight: Double {
         didSet { defaults.set(islandHeight, forKey: "islandHeight") }
     }
+    /// Space either side of the notch for the icon and the percentage.
+    var islandWingWidth: Double {
+        didSet { defaults.set(islandWingWidth, forKey: "islandWingWidth") }
+    }
     var islandExpandOnHover: Bool {
         didSet { defaults.set(islandExpandOnHover, forKey: "islandExpandOnHover") }
     }
@@ -117,14 +121,16 @@ final class Preferences {
         islandMatchNotch = true
         islandWidth = Self.islandDefaults.width
         islandHeight = Self.islandDefaults.height
+        islandWingWidth = Double(IslandLayout.defaultWing)
         islandExpandOnHover = true
         islandAutoExpand = true
         islandLiveActivities = true
-        islandAlwaysOn = false
+        islandAlwaysOn = true
         islandHaptics = true
     }
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         refreshSeconds = defaults.object(forKey: "refreshSeconds") as? Double ?? 5
         perAppThresholdGB = defaults.object(forKey: "perAppThresholdGB") as? Double ?? 6
         swapThresholdGB = defaults.object(forKey: "swapThresholdGB") as? Double ?? 3
@@ -145,10 +151,11 @@ final class Preferences {
         islandMatchNotch = defaults.object(forKey: "islandMatchNotch") as? Bool ?? true
         islandWidth = defaults.object(forKey: "islandWidth") as? Double ?? Self.islandDefaults.width
         islandHeight = defaults.object(forKey: "islandHeight") as? Double ?? Self.islandDefaults.height
+        islandWingWidth = defaults.object(forKey: "islandWingWidth") as? Double ?? Double(IslandLayout.defaultWing)
         islandExpandOnHover = defaults.object(forKey: "islandExpandOnHover") as? Bool ?? true
         islandAutoExpand = defaults.object(forKey: "islandAutoExpand") as? Bool ?? true
         islandLiveActivities = defaults.object(forKey: "islandLiveActivities") as? Bool ?? true
-        islandAlwaysOn = defaults.object(forKey: "islandAlwaysOn") as? Bool ?? false
+        islandAlwaysOn = defaults.object(forKey: "islandAlwaysOn") as? Bool ?? true
         islandHaptics = defaults.object(forKey: "islandHaptics") as? Bool ?? true
     }
 

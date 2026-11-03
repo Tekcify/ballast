@@ -39,8 +39,8 @@ enum RenderPreview {
             let selection = SettingsSelection()
             for section in [SettingsSection.headsUp, .general] {
                 selection.section = section
-                render(SettingsWindowView(monitor: monitor, selection: selection),
-                       to: "/tmp/ballast-settings-\(section.rawValue.lowercased()).png")
+                renderInSettingsWindow(SettingsWindowView(monitor: monitor, selection: selection),
+                                       to: "/tmp/ballast-settings-\(section.rawValue.lowercased()).png")
             }
             print("rendered")
             exit(0)
@@ -66,6 +66,7 @@ enum RenderPreview {
             ("expanded", { set(alert: true, expanded: true, pressure: .warning) }),
             ("scan", { set(alert: false, expanded: false, pressure: .normal, scanning: true) }),
             ("scan-expanded", { set(alert: false, expanded: true, pressure: .normal, scanning: true) }),
+            ("glance-expanded", { set(alert: false, expanded: true, pressure: .normal) }),
         ]
     }
 
@@ -95,6 +96,19 @@ enum RenderPreview {
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
         host.cacheDisplay(in: host.bounds, to: rep)
         return rep
+    }
+
+    /// Renders inside the settings window's own chrome, title bar safe area
+    /// included, which a borderless host would leave out.
+    static func renderInSettingsWindow(_ view: some View, to path: String, appearance: NSAppearance.Name? = nil) {
+        let window = SettingsWindowController.makeWindow(rootView: view)
+        if let appearance { window.appearance = NSAppearance(named: appearance) }
+        guard let host = window.contentView else { return }
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 
     static func render(_ view: some View, to path: String, appearance: NSAppearance.Name? = nil) {

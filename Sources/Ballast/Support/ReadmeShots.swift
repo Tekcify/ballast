@@ -14,7 +14,11 @@ enum ReadmeShots {
         let out = ProcessInfo.processInfo.environment["BALLAST_OUT"] ?? "assets"
         try? FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
 
-        let monitor = Monitor()
+        // A scratch store, so the shots show the defaults and never read or
+        // write the settings of whoever runs this.
+        let suite = "com.tekcify.ballast.readme"
+        UserDefaults().removePersistentDomain(forName: suite)
+        let monitor = Monitor(prefs: Preferences(defaults: UserDefaults(suiteName: suite) ?? .standard))
         seedMemory(monitor)
         RenderPreview.seedStorage(monitor)
         monitor.disk = Probes.DiskSample(total: UInt64(994 * gb), available: UInt64(118 * gb))
@@ -33,8 +37,19 @@ enum ReadmeShots {
         shoot(Desk(height: 430) { islandView(monitor, island) }, "island")
 
         island.expanded = false
-        var strips: [(String, () -> Void)] = [
-            ("Getting cooked", { monitor.pressure = .warning }),
+        let strips: [(String, () -> Void)] = [
+            ("Memory", {
+                island.alert = false
+                monitor.pressure = .normal
+                island.pinnedReadout = .memory
+            }),
+            ("CPU", { island.pinnedReadout = .cpu }),
+            ("Free disk", { island.pinnedReadout = .disk }),
+            ("Getting cooked", {
+                island.pinnedReadout = nil
+                island.alert = true
+                monitor.pressure = .warning
+            }),
             ("Fully cooked", { monitor.pressure = .critical }),
             ("Scanning", {
                 island.alert = false
@@ -100,6 +115,7 @@ enum ReadmeShots {
         monitor.swap = Probes.SwapSample(total: UInt64(8 * gb), used: UInt64(6.1 * gb), encrypted: true)
         monitor.pressure = .warning
         monitor.lastSampledAt = Date()
+        monitor.cpuUsage = 0.23
 
         let apps: [(String, String?, Double, Int, Double)] = [
             ("Google Chrome", "/Applications/Google Chrome.app", 4.8, 31, 12),
@@ -183,7 +199,7 @@ private struct StateSheet: View {
                         .font(Theme.font(13, 560))
                         .foregroundStyle(Color(white: 0.75))
                         .frame(width: 120, alignment: .trailing)
-                    Image(decorative: images[index].1, scale: 1)
+                    Image(decorative: images[index].1, scale: 2)
                 }
             }
         }

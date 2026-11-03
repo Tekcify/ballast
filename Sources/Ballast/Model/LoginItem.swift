@@ -14,6 +14,13 @@ enum LoginItem {
         return FileManager.default.fileExists(atPath: agentURL.path)
     }
 
+    /// Only a copy in an Applications folder should register itself, so a
+    /// build run from the repository never takes over the login item.
+    static var isInstalledCopy: Bool {
+        let path = Bundle.main.bundlePath
+        return path.hasPrefix("/Applications/") || path.hasPrefix(NSHomeDirectory() + "/Applications/")
+    }
+
     enum Status {
         case enabled, needsApproval, off
     }
@@ -35,7 +42,11 @@ enum LoginItem {
         if #available(macOS 13, *) { SMAppService.openSystemSettingsLoginItems() }
     }
 
+    /// Why the last change fell back to the launch agent, for the diagnostic.
+    private(set) static var lastError: String?
+
     static func setEnabled(_ enabled: Bool) {
+        lastError = nil
         if #available(macOS 13, *) {
             do {
                 if enabled {
@@ -46,7 +57,7 @@ enum LoginItem {
                 }
                 return
             } catch {
-                // Fall through to the launch agent.
+                lastError = error.localizedDescription
             }
         }
         enabled ? writeAgent() : removeAgent()
