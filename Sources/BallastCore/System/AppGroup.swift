@@ -48,6 +48,31 @@ package struct AppGroup: Identifiable, Sendable {
 /// Which processes the advisor must leave alone or treat gently. Each
 /// platform's app extends this with the code that builds groups.
 package enum Grouping {
+    #if os(Windows)
+    /// Processes Windows depends on. Quitting any of these signs you out, kills
+    /// the desktop or stops security services. Names are lowercase exe names.
+    package static let essential: Set<String> = [
+        "system", "registry", "secure system", "memory compression", "smss", "csrss",
+        "wininit", "winlogon", "services", "lsass", "lsaiso", "svchost", "fontdrvhost",
+        "dwm", "explorer", "sihost", "taskhostw", "ctfmon", "runtimebroker", "searchhost",
+        "searchindexer", "startmenuexperiencehost", "shellexperiencehost", "textinputhost",
+        "applicationframehost", "lockapp", "securityhealthservice", "msmpeng", "nissrv",
+        "smartscreen", "spoolsv", "audiodg", "conhost", "dllhost", "wudfhost", "ballast",
+    ]
+
+    /// Stopping these from outside loses live state, so they get a warning and a
+    /// lower score rather than a plain "quit it".
+    package static let holdsLiveState: Set<String> = [
+        "vmmem", "vmmemwsl", "vmwp", "virtualboxvm", "vmware-vmx", "qemu-system-x86_64",
+        "qemu-system-aarch64", "docker desktop", "com.docker.backend", "wslservice",
+    ]
+
+    /// Processes whose large memory use is normal and self-correcting.
+    package static let transient: Set<String> = [
+        "searchprotocolhost", "searchfilterhost", "tiworker", "trustedinstaller",
+        "mousocoreworker", "compattelrunner", "wmiprvse", "swift-frontend", "clangd",
+    ]
+    #else
     /// Processes macOS depends on. Quitting any of these logs you out,
     /// kills the window server, or breaks indexing.
     package static let essential: Set<String> = [
@@ -74,10 +99,47 @@ package enum Grouping {
         "mdworker", "mdworker_shared", "mds_stores", "backupd", "photoanalysisd",
         "photolibraryd", "XProtectBehaviorService", "swift-frontend", "clangd",
     ]
+    #endif
+
+    /// The names a group is known by. On macOS that is its display name. On
+    /// Windows the display name comes from the exe's description, so the exe
+    /// name is included too and everything is compared in lowercase.
+    package static func identifiers(of group: AppGroup) -> [String] {
+        #if os(Windows)
+        var names = [group.name.lowercased()]
+        if let path = group.bundlePath {
+            let file = path.split(whereSeparator: { $0 == "\\" || $0 == "/" }).last.map(String.init) ?? path
+            let lower = file.lowercased()
+            names.append(lower.hasSuffix(".exe") ? String(lower.dropLast(4)) : lower)
+        }
+        return names
+        #else
+        return [group.name]
+        #endif
+    }
+
+    /// True when the group goes by any name in `names`.
+    package static func matches(_ names: Set<String>, _ group: AppGroup) -> Bool {
+        identifiers(of: group).contains(where: names.contains)
+    }
 
     package static func isEssential(_ group: AppGroup) -> Bool {
-        if essential.contains(group.name) { return true }
+        if matches(essential, group) { return true }
         if group.bundleIdentifier?.hasPrefix("com.apple.") == true, group.isSystemOwned { return true }
+        #if os(Windows)
+        // Everything under the Windows folder, and anything we cannot even read
+        // the path of, belongs to the system.
+        if group.isSystemOwned { return true }
+        #endif
         return false
     }
+}
+
+/// The operating system's name, for copy shared between platforms.
+package nonisolated enum Platform {
+    #if os(Windows)
+    package static let name = "Windows"
+    #else
+    package static let name = "macOS"
+    #endif
 }

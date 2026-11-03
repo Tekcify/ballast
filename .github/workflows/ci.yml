@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
 
 permissions:
@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   build:
+    name: macOS
     runs-on: macos-26
     timeout-minutes: 20
     steps:
@@ -24,3 +25,37 @@ jobs:
         run: swift build -c release
       - name: Bundle without installing
         run: ./build.sh --no-install
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Swift
+        uses: compnerd/gha-setup-swift@v0.5.1
+        with:
+          branch: swift-6.4.1-release
+          tag: 6.4.1-RELEASE
+      - name: Show toolchain
+        run: swift --version
+      - name: Build debug
+        run: swift build
+      - name: Test
+        run: swift test
+      - name: Build and gather the app
+        run: .\build.ps1
+      - name: Print a memory snapshot
+        run: .\build\Ballast\BallastDiagnostic.exe
+      - name: Tray app self-test
+        shell: pwsh
+        run: |
+          $env:BALLAST_SELFTEST = "1"
+          $app = Start-Process -FilePath .\build\Ballast\Ballast.exe -Wait -PassThru
+          Write-Host "self-test exit code $($app.ExitCode)"
+          if ($app.ExitCode -ne 0) { exit 1 }
+      - name: Upload the app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ballast-Windows
+          path: build\Ballast
