@@ -12,6 +12,7 @@ enum Diagnostic {
         if mode == "render" { RenderPreview.run() }
         if mode == "notify" { runNotify() }
         if mode == "layout" { runLayout() }
+        if mode == "headsup" { runHeadsUp() }
         guard mode == "1" else { return }
 
         guard let vm = Probes.vmSample() else {
@@ -106,12 +107,14 @@ enum Diagnostic {
             var autoSelected: UInt64 = 0
             for item in items.sorted(by: { $0.sizeBytes > $1.sizeBytes }) {
                 let rejection = guardrail.rejection(for: item.path)
-                let auto = item.risk.defaultsOn && item.isSelectable
+                let auto = item.isDefaultPick(at: Date())
+                let smart = item.isSmartPick(at: Date())
                 if item.isSelectable { selectable += item.sizeBytes }
                 if auto { autoSelected += item.sizeBytes }
                 let flags = [
                     item.risk.label,
-                    auto ? "AUTO" : "manual",
+                    auto ? "AUTO" : (smart ? "SMART" : "manual"),
+                    item.idle(at: Date()).map { "idle \(Fmt.duration($0))" },
                     item.isProtected ? "PROTECTED(\(item.heldBy ?? "?"))" : nil,
                     rejection.map { "REFUSED: \($0)" },
                 ].compactMap { $0 }.joined(separator: " ")
@@ -149,6 +152,59 @@ enum Diagnostic {
             exit(0)
         }
         RunLoop.main.run()
+    }
+
+    /// Shows the real heads-up card for ten seconds with pressure faked to
+    /// warning, so it can be seen without starving the Mac of memory.
+    private static func runHeadsUp() {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.accessory)
+        Theme.registerBundledFont()
+        let monitor = Monitor()
+        Task { @MainActor in
+            await monitor.refresh()
+            monitor.pressure = .warning
+            let controller = HeadsUpController(monitor: monitor)
+            controller.present()
+            try? await Task.sleep(for: .milliseconds(600))
+            print("HEADSUP visible \(controller.isVisible) frame \(controller.frame.map { NSStringFromRect($0) } ?? "none")")
+            try? await Task.sleep(for: .seconds(10))
+            exit(controller.isVisible ? 0 : 1)
+        }
+        RunLoop.main.run()
+    }
+
+    /// `BALLAST_SELFTEST=headsup` checks the live app: monitoring runs without
+    /// the panel ever opening, the menu bar item the card anchors to is found,
+    /// the card shows and hides, and "Open Ballast" expands it to the panel.
+    static func selfTestIfRequested(_ monitor: Monitor) {
+        guard ProcessInfo.processInfo.environment["BALLAST_SELFTEST"] == "headsup" else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            var failed = false
+            let sampled = monitor.lastSampledAt != nil
+            let button = StatusItemLocator.button() != nil
+            print("SELFTEST sampled-without-panel \(sampled)")
+            print("SELFTEST status-button \(button)")
+            monitor.pressure = .warning
+            monitor.headsUp?.present()
+            try? await Task.sleep(for: .milliseconds(600))
+            let visible = monitor.headsUp?.isVisible == true
+            print("SELFTEST headsup-visible \(visible)")
+            monitor.headsUp?.close()
+            try? await Task.sleep(for: .milliseconds(400))
+            let closed = monitor.headsUp?.isVisible == false
+            print("SELFTEST headsup-closed \(closed)")
+            monitor.headsUp?.present()
+            try? await Task.sleep(for: .milliseconds(400))
+            monitor.headsUp?.expand()
+            try? await Task.sleep(for: .milliseconds(600))
+            let width = monitor.headsUp?.frame?.width ?? 0
+            let expanded = monitor.headsUp?.isExpanded == true && abs(width - Theme.panelWidth) < 2
+            print("SELFTEST expanded-to-panel \(expanded) width \(Int(width)) height \(Int(monitor.headsUp?.frame?.height ?? 0))")
+            failed = !(sampled && button && visible && closed && expanded)
+            exit(failed ? 1 : 0)
+        }
     }
 
     private actor Collector {

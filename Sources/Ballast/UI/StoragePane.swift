@@ -19,9 +19,8 @@ struct StoragePane: View {
             SectionHeader(title: "Storage") {
                 if monitor.isScanning {
                     QuietButton(title: "Stop", tint: .secondary) { monitor.cancelScan() }
-                } else if !monitor.isCleaning {
-                    QuietButton(title: monitor.storageItems.isEmpty ? "Scan" : "Rescan",
-                                tint: Theme.appMemory) { monitor.scan() }
+                } else if !monitor.isCleaning, !monitor.storageItems.isEmpty {
+                    QuietButton(title: "Rescan", tint: Theme.appMemory) { monitor.scan() }
                 }
             }
 
@@ -60,16 +59,29 @@ struct StoragePane: View {
             }
 
             if let progress = monitor.scanProgress {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 12, height: 12)
-                    Text(progress.total > 0
-                         ? "\(progress.stage) · \(progress.completed) of \(progress.total)"
-                         : progress.stage)
-                        .font(Theme.caption)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 12, height: 12)
+                        Text(progress.total > 1
+                             ? "\(progress.stage) · \(progress.completed) of \(progress.total)"
+                             : progress.stage)
+                            .font(Theme.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    if progress.total > 1 {
+                        MeterBar(segments: [
+                            .init(color: Theme.appMemory,
+                                  fraction: Double(progress.completed) / Double(progress.total)),
+                        ], height: 3)
+                    }
                 }
             } else if let status = monitor.statusLine {
-                Text(status).font(Theme.caption).foregroundStyle(.secondary)
+                Text(status)
+                    .font(Theme.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -84,9 +96,9 @@ struct StoragePane: View {
     private func headlineCaption(_ disk: Probes.DiskSample) -> String {
         if monitor.storageItems.isEmpty { return "free of \(Fmt.bytes(disk.total))" }
         if monitor.selection.isEmpty {
-            return "can be cleared · \(Fmt.bytes(disk.available)) free now"
+            return "up for grabs · \(Fmt.bytes(disk.available)) free rn"
         }
-        return "selected · \(Fmt.bytes(monitor.reclaimableBytes)) found"
+        return "picked · \(Fmt.bytes(monitor.reclaimableBytes)) found"
     }
 
     private func usedFraction(_ disk: Probes.DiskSample) -> Double {
@@ -104,21 +116,39 @@ struct StoragePane: View {
     @ViewBuilder
     private var content: some View {
         if monitor.storageItems.isEmpty && !monitor.isScanning {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Nothing measured yet")
-                    .font(Theme.rowTitle)
-                Text("A scan measures developer and app caches, build output and the Trash. Nothing is deleted until you choose it.")
-                    .font(Theme.body)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Haven't scanned yet")
+                        .font(Theme.rowTitle)
+                    Text("A scan checks dev caches, build junk, app caches and the Trash, then ranks them by size. Nothing gets deleted unless you pick it.")
+                        .font(Theme.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                PrimaryButton(title: "Scan now", enabled: !monitor.isCleaning) { monitor.scan() }
             }
             .padding(.bottom, 4)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 selectionBar
-                ListContainer(maxHeight: 280) {
-                    ForEach(groupedCategories, id: \.name) { category in
-                        CategoryBlock(category: category, monitor: monitor)
+                if monitor.storageItems.isEmpty {
+                    Text("Results drop in here as they're measured, biggest first.")
+                        .font(Theme.body)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 6)
+                } else {
+                    ListContainer(maxHeight: 280) {
+                        if monitor.prefs.rankStorageBySize {
+                            let largest = monitor.storageItems.first?.sizeBytes ?? 1
+                            ForEach(monitor.storageItems) { item in
+                                ItemRow(item: item, monitor: monitor,
+                                        rank: Double(item.sizeBytes) / Double(max(largest, 1)))
+                            }
+                        } else {
+                            ForEach(groupedCategories, id: \.name) { category in
+                                CategoryBlock(category: category, monitor: monitor)
+                            }
+                        }
                     }
                 }
                 footer
@@ -128,16 +158,16 @@ struct StoragePane: View {
 
     private var selectionBar: some View {
         HStack(spacing: 8) {
-            Text(monitor.selection.isEmpty
-                 ? "Nothing selected"
-                 : "\(monitor.selection.count) of \(monitor.storageItems.filter(\.isSelectable).count) selected")
-                .font(Theme.caption)
-                .foregroundStyle(monitor.selection.isEmpty ? .secondary : .primary)
+            Segmented(
+                options: [(true, "Biggest"), (false, "By type")],
+                selection: Binding(
+                    get: { monitor.prefs.rankStorageBySize },
+                    set: { monitor.prefs.rankStorageBySize = $0 }
+                )
+            )
             Spacer(minLength: 4)
-            QuietButton(title: "Safe only", tint: Theme.positive) {
-                monitor.clearSelection()
-                monitor.selectAll(risk: .safe)
-            }
+            QuietButton(title: "Smart pick", tint: Theme.positive) { monitor.smartPick() }
+                .help("Safe caches plus rebuildable ones you haven't touched in 30 days. Skips anything in use.")
             if !monitor.selection.isEmpty {
                 QuietButton(title: "Clear") { monitor.clearSelection() }
             }
@@ -148,39 +178,67 @@ struct StoragePane: View {
         VStack(alignment: .leading, spacing: 7) {
             if !monitor.protectedItems.isEmpty {
                 Text(monitor.protectedItems.count == 1
-                     ? "1 path left out because a running process is working inside it."
-                     : "\(monitor.protectedItems.count) paths left out because running processes are working inside them.")
+                     ? "Left 1 spot alone since something's running in there."
+                     : "Left \(monitor.protectedItems.count) spots alone since stuff is running in there.")
                     .font(Theme.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             if confirming {
-                HStack(spacing: 8) {
-                    Text("Delete \(Fmt.bytes(monitor.selectedBytes))?")
-                        .font(Theme.caption)
-                    Spacer(minLength: 4)
-                    QuietButton(title: "Cancel") { confirming = false }
-                    PrimaryButton(title: "Yes, clean", tint: Theme.critical) {
-                        confirming = false
-                        Task { await monitor.clean() }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text("Clear \(Fmt.bytes(monitor.selectedBytes)) for real?")
+                            .font(Theme.font(11.5, 560))
+                        Spacer(minLength: 4)
+                        QuietButton(title: "Nah") { confirming = false }
+                        PrimaryButton(title: "Yes, clear it", tint: Theme.critical) {
+                            confirming = false
+                            Task { await monitor.clean() }
+                        }
+                    }
+                    if let note = confirmNote {
+                        Text(note)
+                            .font(Theme.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             } else {
                 HStack(spacing: 8) {
-                    if let report = monitor.lastReport {
-                        Text(report.summary)
-                            .font(Theme.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(footerCaption)
+                        .font(Theme.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     Spacer(minLength: 4)
                     PrimaryButton(
-                        title: monitor.isCleaning ? "Cleaning…" : "Clean selected",
-                        enabled: !monitor.selection.isEmpty && !monitor.isCleaning
+                        title: monitor.isCleaning
+                            ? "Clearing…"
+                            : monitor.selection.isEmpty ? "Clear" : "Clear \(Fmt.bytes(monitor.selectedBytes))",
+                        enabled: !monitor.selection.isEmpty && !monitor.isCleaning && !monitor.isScanning
                     ) { confirming = true }
                 }
             }
         }
+    }
+
+    private var footerCaption: String {
+        if monitor.selection.isEmpty {
+            return monitor.lastReport?.summary ?? "Nothing picked"
+        }
+        let total = monitor.storageItems.filter(\.isSelectable).count
+        return "\(monitor.selection.count) of \(total) picked"
+    }
+
+    /// Says where things end up, because only the safe tier frees space straight away.
+    private var confirmNote: String? {
+        let picked = monitor.storageItems.filter { monitor.selection.contains($0.id) }
+        let trashed = picked.filter { $0.risk.usesTrash && $0.path != NSHomeDirectory() + "/.Trash" }
+        guard !trashed.isEmpty else { return nil }
+        let bytes = trashed.reduce(0) { $0 + $1.sizeBytes }
+        return trashed.count == picked.count
+            ? "These go to the Trash, so the space comes back once you empty it."
+            : "Safe stuff gets deleted. \(Fmt.bytes(bytes)) goes to the Trash and frees up once you empty it."
     }
 
     // MARK: Grouping
@@ -235,6 +293,8 @@ private struct CategoryBlock: View {
 private struct ItemRow: View {
     var item: CleanupItem
     var monitor: Monitor
+    /// Share of the largest item, drawn as a small bar when ranking by size.
+    var rank: Double?
     @State private var hovering = false
 
     private var isSelected: Bool { monitor.selection.contains(item.id) }
@@ -260,6 +320,8 @@ private struct ItemRow: View {
             .buttonStyle(.plain)
             .disabled(!item.isSelectable)
             .padding(.top, 1)
+            .accessibilityLabel(item.title)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
 
             VStack(alignment: .leading, spacing: 1.5) {
                 HStack(spacing: 6) {
@@ -274,10 +336,16 @@ private struct ItemRow: View {
                                 .fill(Theme.riskColor(item.risk).opacity(0.12))
                         )
                 }
-                Text(item.heldBy.map { "In use by \($0). Left alone." } ?? item.reason)
+                Text(item.heldBy.map { "\($0) is using this rn, so hands off." } ?? item.reason)
                     .font(Theme.caption)
                     .foregroundStyle(item.isProtected ? Theme.warning : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let meta {
+                    Text(meta)
+                        .font(Theme.font(9.5, 440))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
                 if hovering {
                     Text(item.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                         .font(Theme.font(9.5, 400))
@@ -289,8 +357,19 @@ private struct ItemRow: View {
 
             Spacer(minLength: 6)
 
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: .trailing, spacing: 3) {
                 Text(Fmt.bytes(item.sizeBytes)).font(Theme.number)
+                if let rank {
+                    Capsule()
+                        .fill(Theme.track)
+                        .frame(width: 44, height: 3)
+                        .overlay(alignment: .leading) {
+                            Capsule()
+                                .fill(Theme.riskColor(item.risk).opacity(item.isSelectable ? 0.75 : 0.35))
+                                .frame(width: max(44 * rank, 3), height: 3)
+                        }
+                        .accessibilityHidden(true)
+                }
                 if hovering {
                     QuietButton(title: "Reveal") { monitor.revealInFinder(item.path) }
                 }
@@ -298,10 +377,27 @@ private struct ItemRow: View {
         }
         .padding(.vertical, 5)
         .padding(.horizontal, 6)
+        .opacity(item.isSelectable ? 1 : 0.7)
         .background(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(hovering ? Theme.fill : .clear)
         )
+        .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .onTapGesture { monitor.toggle(item) }
         .onHover { hovering = $0 }
+    }
+
+    /// Category when the list is ranked across all of them, and how long the
+    /// folder has sat untouched when that is worth knowing.
+    private var meta: String? {
+        var parts: [String] = []
+        if rank != nil { parts.append(item.category) }
+        let now = Date()
+        if item.isBusy(at: now) {
+            parts.append("busy rn, skipped by smart pick")
+        } else if let idle = item.idle(at: now), idle >= 14 * 86_400 {
+            parts.append("untouched for \(Fmt.duration(idle))")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }

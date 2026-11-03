@@ -12,6 +12,12 @@ let package = Package(
                 .defaultIsolation(MainActor.self),
                 .swiftLanguageMode(.v6),
             ]
-        )
+        ),
+        .testTarget(
+            name: "BallastTests",
+            dependencies: ["Ballast"],
+            path: "Tests/BallastTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
     ]
 )

@@ -1,6 +1,6 @@
 import Foundation
 
-nonisolated enum Risk: Int, Sendable, Comparable, CaseIterable {
+nonisolated enum Risk: Int, Sendable, Codable, Comparable, CaseIterable {
     /// Regenerated automatically. Deleted outright.
     case safe
     /// Regenerated, but at the cost of a download or a rebuild. Moved to Trash.
@@ -26,7 +26,7 @@ nonisolated enum Risk: Int, Sendable, Comparable, CaseIterable {
     var usesTrash: Bool { self == .review || self == .caution }
 }
 
-nonisolated struct CleanupItem: Identifiable, Sendable {
+nonisolated struct CleanupItem: Identifiable, Sendable, Codable {
     var id: String { path }
     var path: String
     var title: String
@@ -37,9 +37,46 @@ nonisolated struct CleanupItem: Identifiable, Sendable {
     /// Set when a live process is working inside this path, which makes it unsafe
     /// to remove no matter how reclaimable it looks.
     var heldBy: String?
+    /// Newest modification time of the folder and its immediate children.
+    var lastTouched: Date?
+    /// The project a build cache belongs to, so the live-process check can be
+    /// repeated right before cleaning.
+    var projectRoot: String?
 
     var isProtected: Bool { heldBy != nil }
     var isSelectable: Bool { risk.isSelectable && !isProtected && sizeBytes > 0 }
+
+    static let busyWindow: TimeInterval = 10 * 60
+    static let dormantAfter: TimeInterval = 30 * 86_400
+
+    func idle(at now: Date) -> TimeInterval? {
+        lastTouched.map { now.timeIntervalSince($0) }
+    }
+
+    /// Something wrote here in the last few minutes, so an app is probably using it.
+    func isBusy(at now: Date) -> Bool {
+        (idle(at: now) ?? .infinity) < Self.busyWindow
+    }
+
+    func isDormant(at now: Date) -> Bool {
+        (idle(at: now) ?? 0) >= Self.dormantAfter
+    }
+
+    /// Picked on a fresh scan: safe tier only, skipping anything being written to.
+    func isDefaultPick(at now: Date) -> Bool {
+        isSelectable && risk.defaultsOn && !isBusy(at: now)
+    }
+
+    /// Smart pick adds rebuildable caches that have sat untouched for a month.
+    /// Careful items are never picked for you.
+    func isSmartPick(at now: Date) -> Bool {
+        guard isSelectable, !isBusy(at: now) else { return false }
+        switch risk {
+        case .safe: return true
+        case .review: return isDormant(at: now)
+        case .caution, .reportOnly: return false
+        }
+    }
 }
 
 /// Declarative description of somewhere worth measuring.

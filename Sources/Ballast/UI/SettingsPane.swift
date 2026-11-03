@@ -21,6 +21,10 @@ struct SettingsPane: View {
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                SettingRow(label: "Pop up when memory gets cooked") {
+                    Switch(isOn: Binding(get: { prefs.headsUpEnabled },
+                                         set: { prefs.headsUpEnabled = $0 }))
+                }
 
                 ValueStepper(
                     label: "Warn when one app passes",

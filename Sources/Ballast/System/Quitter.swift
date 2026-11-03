@@ -9,9 +9,9 @@ struct QuitOutcome: Sendable {
 
     var summary: String {
         if stillRunning == 0 {
-            return forced ? "\(name) was force quit." : "\(name) quit."
+            return forced ? "\(name) got force quit." : "\(name) has left the chat."
         }
-        return "\(name) did not quit. \(stillRunning) process\(stillRunning == 1 ? "" : "es") still running."
+        return "\(name) won't leave. \(stillRunning) process\(stillRunning == 1 ? "" : "es") still running."
     }
 }
 

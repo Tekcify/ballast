@@ -71,9 +71,9 @@ nonisolated enum Probes {
 
         var label: String {
             switch self {
-            case .normal: "Normal"
-            case .warning: "Under pressure"
-            case .critical: "Critical"
+            case .normal: "Chillin"
+            case .warning: "Getting cooked"
+            case .critical: "Fully cooked"
             }
         }
     }
@@ -203,6 +203,22 @@ nonisolated enum Probes {
             String(cString: UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self))
         }
         return path.isEmpty ? nil : path
+    }
+
+    /// Working directory of every readable process under `home`, used to protect
+    /// a cache that a live dev server is still writing to.
+    nonisolated static func liveWorkingDirectories(home: String) -> [String: String] {
+        var map: [String: String] = [:]
+        for process in processList() {
+            guard let cwd = workingDirectory(process.pid), cwd.hasPrefix(home) else { continue }
+            map[cwd] = process.name
+        }
+        return map
+    }
+
+    /// The process working inside `projectRoot`, if any.
+    nonisolated static func holder(of projectRoot: String, in live: [String: String]) -> String? {
+        live.first { $0.key == projectRoot || $0.key.hasPrefix(projectRoot + "/") }?.value
     }
 
     // MARK: Disk

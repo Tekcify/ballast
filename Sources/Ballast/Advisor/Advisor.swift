@@ -37,9 +37,9 @@ enum Advisor {
             out.append(Advice(
                 id: "pressure",
                 headline: input.pressure == .critical
-                    ? "Memory pressure is critical"
-                    : "Memory is under pressure",
-                detail: "\(compressed) compressed, \(swapped) on swap. The system is working to stay ahead of demand.",
+                    ? "Memory is fully cooked"
+                    : "Memory is getting cooked",
+                detail: "\(compressed) squeezed, \(swapped) on swap. macOS is sweating to keep up.",
                 severity: input.pressure == .critical ? .critical : .warning,
                 action: .none,
                 reclaimBytes: 0,
@@ -50,8 +50,8 @@ enum Advisor {
         if let swap = input.swap, swap.used >= prefs.swapThresholdBytes, input.pressure == .normal {
             out.append(Advice(
                 id: "swap",
-                headline: "\(Fmt.bytes(swap.used)) has been pushed to swap",
-                detail: "Pressure has eased but the swap file stays large until the processes that caused it are restarted.",
+                headline: "\(Fmt.bytes(swap.used)) got shoved into swap",
+                detail: "Pressure calmed down, but swap stays chunky until whatever caused it restarts.",
                 severity: .info,
                 action: .none,
                 reclaimBytes: 0,
@@ -63,9 +63,9 @@ enum Advisor {
             let reclaim = input.reclaimableStorage
             out.append(Advice(
                 id: "disk",
-                headline: "\(Fmt.bytes(disk.available)) free on disk",
+                headline: "Only \(Fmt.bytes(disk.available)) free. Disk is down bad",
                 detail: reclaim.map { "A scan found \(Fmt.bytes($0)) of caches you can clear." }
-                    ?? "Run a storage scan to see what can be cleared.",
+                    ?? "Run a storage scan to see what can go.",
                 severity: disk.available <= prefs.lowDiskBytes / 2 ? .critical : .warning,
                 action: .openStorage,
                 reclaimBytes: reclaim ?? 0,
@@ -107,31 +107,31 @@ enum Advisor {
 
             if group.isFrontmost {
                 score *= 0.5
-                clauses.append("you are using it right now, so save your work first")
+                clauses.append("you're on it rn, so save your work first")
             } else if let last = input.lastActive[group.id] {
                 let idle = now.timeIntervalSince(last)
                 if idle >= prefs.idleMinutes * 60 {
                     score *= 1.6
-                    clauses.append("last in front \(Fmt.duration(idle)) ago")
+                    clauses.append("you haven't touched it in \(Fmt.duration(idle))")
                 }
             } else if group.isRunningApp {
                 score *= 1.4
-                clauses.append("has not been in front since Ballast started")
+                clauses.append("you haven't opened it since Ballast started")
             }
 
             if group.isHidden {
                 score *= 1.2
-                clauses.append("window is hidden")
+                clauses.append("it's hiding in the background")
             }
 
             if Grouping.transient.contains(group.name) {
                 score *= 0.3
-                clauses.append("usually finishes on its own")
+                clauses.append("it usually wraps up on its own")
             }
 
             if let growth, isLeak {
                 score *= 1.5
-                clauses.append("growing \(Fmt.rate(growth)) for the last \(Fmt.duration(input.growth.observedSpan(group.id)))")
+                clauses.append("it grew \(Fmt.rate(growth)) for the last \(Fmt.duration(input.growth.observedSpan(group.id)))")
             }
 
             if group.isSystemOwned && !group.isRunningApp {
@@ -141,7 +141,7 @@ enum Advisor {
             let livesInside = Grouping.holdsLiveState.contains(group.name)
             if livesInside {
                 score *= 0.5
-                clauses.append("holds live state, so shut it down from inside it rather than quitting it")
+                clauses.append("it holds live state, so shut it down from inside instead of force quitting")
             }
 
             candidates.append(Candidate(group: group, score: score, clauses: clauses, isLeak: isLeak))
@@ -155,10 +155,10 @@ enum Advisor {
                 return Advice(
                     id: "quit:\(group.id)",
                     headline: candidate.isLeak
-                        ? "\(group.name) keeps growing"
-                        : "Quit \(group.name)",
+                        ? "\(group.name) keeps growing, kinda sus"
+                        : "\(group.name) is hogging RAM",
                     detail: sentence(candidate.clauses)
-                        + (candidate.isLeak ? ". Restarting it reclaims the memory." : "."),
+                        + (candidate.isLeak ? ". Restart it and you get that memory back." : "."),
                     severity: candidate.isLeak
                         ? .warning
                         : (input.pressure > .normal ? .warning : .info),

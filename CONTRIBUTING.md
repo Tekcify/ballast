@@ -54,6 +54,8 @@ BALLAST_DIAGNOSTIC=1      .build/release/Ballast   # memory snapshot and advice
 BALLAST_DIAGNOSTIC=scan   .build/release/Ballast   # storage dry run, deletes nothing
 BALLAST_DIAGNOSTIC=layout .build/release/Ballast   # fails if the popover collapses
 BALLAST_DIAGNOSTIC=render .build/release/Ballast   # writes /tmp/ballast-*.png
+BALLAST_DIAGNOSTIC=headsup .build/release/Ballast  # shows the heads-up card for ten seconds
+swift test                                          # heads-up timing, smart pick, saved scans
 ```
 
 - For memory changes, compare the snapshot against `vm_stat`, Activity Monitor

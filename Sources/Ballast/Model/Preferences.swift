@@ -48,6 +48,12 @@ final class Preferences {
     var autoScanHours: Double {
         didSet { defaults.set(autoScanHours, forKey: "autoScanHours") }
     }
+    var headsUpEnabled: Bool {
+        didSet { defaults.set(headsUpEnabled, forKey: "headsUpEnabled") }
+    }
+    var rankStorageBySize: Bool {
+        didSet { defaults.set(rankStorageBySize, forKey: "rankStorageBySize") }
+    }
 
     init() {
         refreshSeconds = defaults.object(forKey: "refreshSeconds") as? Double ?? 5
@@ -62,6 +68,8 @@ final class Preferences {
         includeDependencyFolders = defaults.object(forKey: "includeDependencyFolders") as? Bool ?? false
         autoScanEnabled = defaults.object(forKey: "autoScanEnabled") as? Bool ?? true
         autoScanHours = defaults.object(forKey: "autoScanHours") as? Double ?? 24
+        headsUpEnabled = defaults.object(forKey: "headsUpEnabled") as? Bool ?? true
+        rankStorageBySize = defaults.object(forKey: "rankStorageBySize") as? Bool ?? true
     }
 
     var perAppThresholdBytes: UInt64 { UInt64(perAppThresholdGB * 1_073_741_824) }

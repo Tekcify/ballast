@@ -18,10 +18,27 @@ enum RenderPreview {
             render(PanelHost(monitor: monitor, pane: .memory), to: "/tmp/ballast-memory.png")
             render(PanelHost(monitor: monitor, pane: .storage), to: "/tmp/ballast-storage.png")
             render(PanelHost(monitor: monitor, pane: .settings), to: "/tmp/ballast-settings.png")
+
+            monitor.prefs.rankStorageBySize.toggle()
+            render(PanelHost(monitor: monitor, pane: .storage), to: "/tmp/ballast-storage-bytype.png")
+            monitor.prefs.rankStorageBySize.toggle()
+
+            let actual = monitor.pressure
+            monitor.pressure = .warning
+            render(card(monitor), to: "/tmp/ballast-headsup.png")
+            monitor.pressure = .normal
+            render(card(monitor), to: "/tmp/ballast-headsup-recovered.png")
+            monitor.pressure = actual
             print("rendered")
             exit(0)
         }
         RunLoop.main.run()
+    }
+
+    private static func card(_ monitor: Monitor) -> some View {
+        HeadsUpView(monitor: monitor, onDismiss: {}, onSnooze: {}, onOpen: {})
+            .padding(10)
+            .background(Color(white: 0.82))
     }
 
     private static func render(_ view: some View, to path: String) {
@@ -40,6 +57,7 @@ enum RenderPreview {
 
     private static func seedStorage(_ monitor: Monitor) {
         let home = NSHomeDirectory()
+        let day: TimeInterval = 86_400
         let rows: [(String, String, String, Risk, String, UInt64, String?)] = [
             ("\(home)/Library/Developer/Xcode/DerivedData/Weather-gvqxrrryxhac", "Weather-gvqxrrryxhac", "Xcode", .safe,
              "Build intermediates. Xcode regenerates them on the next build.", 18_253_611_008, nil),
@@ -59,14 +77,15 @@ enum RenderPreview {
              "Emptying this is final. Check it first.", 4_294_967_296, nil),
         ]
 
-        monitor.storageItems = rows.map {
-            CleanupItem(path: $0.0, title: $0.1, category: $0.2, risk: $0.3,
-                        reason: $0.4, sizeBytes: $0.5, heldBy: $0.6)
+        let idle: [TimeInterval] = [3 * day, 64 * day, 2 * day, 200 * day, 1 * day, 0, 120, 20 * day]
+        monitor.storageItems = zip(rows, idle).map { row, idle in
+            CleanupItem(path: row.0, title: row.1, category: row.2, risk: row.3,
+                        reason: row.4, sizeBytes: row.5, heldBy: row.6,
+                        lastTouched: Date().addingTimeInterval(-idle))
         }
-        monitor.selection = Set(
-            monitor.storageItems.filter { $0.risk.defaultsOn && $0.isSelectable }.map(\.id)
-        )
-        monitor.statusLine = "\(Fmt.bytes(monitor.reclaimableBytes)) can be cleared."
+        .sorted { $0.sizeBytes > $1.sizeBytes }
+        monitor.selection = Set(monitor.storageItems.filter { $0.isDefaultPick(at: Date()) }.map(\.id))
+        monitor.statusLine = "Found \(monitor.storageItems.count) spots in 5m. Biggest ones up top."
     }
 }
 

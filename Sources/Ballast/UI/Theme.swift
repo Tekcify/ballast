@@ -240,6 +240,37 @@ struct QuietButton: View {
     }
 }
 
+/// Two or three short options in one quiet track, for switching a view mode.
+struct Segmented<Value: Hashable>: View {
+    var options: [(value: Value, label: String)]
+    @Binding var selection: Value
+
+    var body: some View {
+        HStack(spacing: 1) {
+            ForEach(options.indices, id: \.self) { index in
+                let option = options[index]
+                let selected = option.value == selection
+                Button { selection = option.value } label: {
+                    Text(option.label)
+                        .font(Theme.font(10.5, selected ? 560 : 460))
+                        .foregroundStyle(selected ? .primary : .secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                                .fill(selected ? Color(nsColor: .controlBackgroundColor) : .clear)
+                                .shadow(color: .black.opacity(selected ? 0.08 : 0), radius: 0.5, y: 0.5)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(1.5)
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Theme.fill))
+    }
+}
+
 struct PrimaryButton: View {
     var title: String
     var tint: Color = Theme.appMemory

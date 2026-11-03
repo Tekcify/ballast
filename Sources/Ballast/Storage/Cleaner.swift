@@ -4,6 +4,8 @@ nonisolated struct CleanReport: Sendable {
     var freedBytes: UInt64
     var removed: Int
     var trashed: Int
+    /// Bytes moved to the Trash. They still occupy the disk until it is emptied.
+    var trashedBytes: UInt64 = 0
     var failures: [(path: String, reason: String)]
     var diskAvailableBefore: UInt64?
     var diskAvailableAfter: UInt64?
@@ -18,10 +20,10 @@ nonisolated struct CleanReport: Sendable {
     var summary: String {
         var parts: [String] = []
         if removed > 0 { parts.append("\(removed) deleted") }
-        if trashed > 0 { parts.append("\(trashed) moved to Trash") }
+        if trashed > 0 { parts.append("\(trashed) in the Trash") }
         if !failures.isEmpty { parts.append("\(failures.count) skipped") }
-        let detail = parts.isEmpty ? "nothing to do" : parts.joined(separator: ", ")
-        return "\(Fmt.bytes(freedBytes)) cleared · \(detail)"
+        guard !parts.isEmpty else { return "Nothing to clear, you're good" }
+        return "Freed \(Fmt.bytes(freedBytes - min(trashedBytes, freedBytes))) · \(parts.joined(separator: ", "))"
     }
 }
 
@@ -47,8 +49,13 @@ actor Cleaner {
         var freed: UInt64 = 0
         var removed = 0
         var trashed = 0
+        var trashedBytes: UInt64 = 0
         var failures: [(path: String, reason: String)] = []
         var log: [LogEntry] = []
+        // Results can be hours old, so a dev server started since the scan
+        // still protects its project.
+        let live = items.contains { $0.projectRoot != nil }
+            ? Probes.liveWorkingDirectories(home: home) : [:]
 
         for (index, item) in items.enumerated() {
             if Task.isCancelled { break }
@@ -60,6 +67,10 @@ actor Cleaner {
             }
             guard !item.isProtected else {
                 failures.append((item.path, "in use by \(item.heldBy ?? "a running process")"))
+                continue
+            }
+            if let root = item.projectRoot, let holder = Probes.holder(of: root, in: live) {
+                failures.append((item.path, "in use by \(holder)"))
                 continue
             }
             if let reason = guardrail.rejection(for: item.path) {
@@ -78,6 +89,7 @@ actor Cleaner {
                     try fileManager.trashItem(at: URL(fileURLWithPath: item.path), resultingItemURL: &resulting)
                     method = "trashed"
                     trashed += 1
+                    trashedBytes += item.sizeBytes
                 } else {
                     try fileManager.removeItem(atPath: item.path)
                     method = "deleted"
@@ -100,6 +112,7 @@ actor Cleaner {
             freedBytes: freed,
             removed: removed,
             trashed: trashed,
+            trashedBytes: trashedBytes,
             failures: failures,
             diskAvailableBefore: before,
             diskAvailableAfter: Probes.diskSample()?.available

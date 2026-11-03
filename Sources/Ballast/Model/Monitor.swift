@@ -26,11 +26,13 @@ final class Monitor {
     }
     var lastReport: CleanReport?
     var statusLine: String?
+    var lastQuitOutcome: String?
 
     let prefs = Preferences()
 
     init() {
         lastScanAt = UserDefaults.standard.object(forKey: "lastScanAt") as? Date
+        restoreLastScan()
     }
 
     let alerter = Alerter()
@@ -42,10 +44,16 @@ final class Monitor {
     private var loop: Task<Void, Never>?
     private let launchedAt = Date()
     private var scanTask: Task<Void, Never>?
+    private(set) var headsUp: HeadsUpController?
+    private var headsUpPolicy = HeadsUpPolicy()
 
     // MARK: Lifecycle
 
+    /// Called at launch and again when the panel first appears, so it must only
+    /// start the loop once.
     func start() {
+        guard loop == nil else { return }
+        headsUp = HeadsUpController(monitor: self)
         alerter.start { [weak self] name, pids in
             Task { @MainActor in await self?.quit(name: name, pids: pids) }
         }
@@ -147,6 +155,7 @@ final class Monitor {
             now: sample.at
         )
 
+        updateHeadsUp(at: sample.at)
         notify()
         await maybeAutoScan()
     }
@@ -171,9 +180,14 @@ final class Monitor {
     /// Only the single most useful alert goes out per refresh. Firing one per
     /// piece of advice would mean four banners the moment pressure rises.
     private func notify() {
-        guard prefs.notificationsEnabled else { return }
+        guard prefs.notificationsEnabled, headsUp?.isVisible != true else { return }
 
-        let urgent = advice.filter { $0.severity >= .warning }
+        // Under pressure the heads-up card carries the memory story, so banners
+        // are left for disk space.
+        let cardOwnsMemory = prefs.headsUpEnabled && pressure > .normal
+        let urgent = advice.filter {
+            $0.severity >= .warning && (!cardOwnsMemory || $0.action == .openStorage)
+        }
         guard let top = urgent.first(where: { if case .quit = $0.action { true } else { false } })
             ?? urgent.first
         else { return }
@@ -188,6 +202,30 @@ final class Monitor {
             cooldown: prefs.cooldownMinutes * 60,
             quit: quit
         )
+    }
+
+    // MARK: Heads-up
+
+    private func updateHeadsUp(at now: Date) {
+        guard let headsUp else { return }
+        guard prefs.headsUpEnabled else {
+            headsUp.close()
+            return
+        }
+        switch headsUpPolicy.observe(pressure, isVisible: headsUp.isVisible, now: now) {
+        case .present: headsUp.present()
+        case .recover: headsUp.closeSoon()
+        case .none: if pressure > .normal { headsUp.cancelClose() }
+        }
+    }
+
+    func dismissHeadsUp() {
+        headsUp?.close()
+    }
+
+    func snoozeHeadsUp() {
+        headsUpPolicy.snooze(for: 3600, now: Date())
+        headsUp?.close()
     }
 
     // MARK: Derived values
@@ -221,9 +259,10 @@ final class Monitor {
     // MARK: Actions
 
     func quit(name: String, pids: [pid_t]) async {
-        statusLine = "Asking \(name) to quit…"
+        statusLine = "Asking \(name) to dip…"
         let outcome = await Quitter.quit(name: name, pids: pids)
         statusLine = outcome.summary
+        lastQuitOutcome = outcome.summary
         alerter.resetCooldown(for: "quit:\(name)")
         await refresh()
     }
@@ -249,13 +288,15 @@ final class Monitor {
                 }
             )
             await MainActor.run {
+                guard self.isScanning else { return }
                 self.isScanning = false
                 self.scanProgress = nil
                 self.lastScanAt = Date()
+                ScanCache.save(self.storageItems)
                 let elapsed = Fmt.duration(Date().timeIntervalSince(startedAt))
                 self.statusLine = self.storageItems.isEmpty
-                    ? "Nothing worth clearing. Measured in \(elapsed)."
-                    : "Measured \(self.storageItems.count) locations in \(elapsed)."
+                    ? "Your disk is clean, honestly. Checked in \(elapsed)."
+                    : "Found \(self.storageItems.count) spots in \(elapsed). Biggest ones up top."
             }
         }
     }
@@ -264,14 +305,25 @@ final class Monitor {
         scanTask?.cancel()
         isScanning = false
         scanProgress = nil
+        statusLine = "Scan stopped. These are only the spots measured so far."
     }
 
     private func absorb(_ items: [CleanupItem]) {
         let known = Set(storageItems.map(\.path))
         storageItems.append(contentsOf: items.filter { !known.contains($0.path) })
         storageItems.sort { $0.sizeBytes > $1.sizeBytes }
-        for item in items where item.risk.defaultsOn && item.isSelectable {
+        let now = Date()
+        for item in items where item.isDefaultPick(at: now) {
             selection.insert(item.id)
+        }
+    }
+
+    private func restoreLastScan() {
+        storageItems = ScanCache.load().sorted { $0.sizeBytes > $1.sizeBytes }
+        let now = Date()
+        selection = Set(storageItems.filter { $0.isDefaultPick(at: now) }.map(\.id))
+        if !storageItems.isEmpty, let lastScanAt {
+            statusLine = "From your last scan \(Fmt.duration(now.timeIntervalSince(lastScanAt))) ago. Rescan for fresh numbers."
         }
     }
 
@@ -280,10 +332,18 @@ final class Monitor {
         if selection.contains(item.id) { selection.remove(item.id) } else { selection.insert(item.id) }
     }
 
-    func selectAll(risk: Risk) {
-        for item in storageItems where item.risk == risk && item.isSelectable {
-            selection.insert(item.id)
-        }
+    /// Safe caches plus rebuildable ones nobody has touched in a month, skipping
+    /// anything an app wrote to in the last few minutes.
+    func smartPick() {
+        let now = Date()
+        let picks = storageItems.filter { $0.isSmartPick(at: now) }
+        selection = Set(picks.map(\.id))
+        let dormant = picks.filter { $0.risk == .review }.count
+        statusLine = picks.isEmpty
+            ? "Nothing's safe to auto pick rn. Tick what you want by hand."
+            : dormant > 0
+                ? "Picked the safe stuff plus \(dormant) cache\(dormant == 1 ? "" : "s") you ghosted for 30+ days."
+                : "Picked the safe stuff. Nothing else has been sitting long enough."
     }
 
     func clearSelection() { selection = [] }
@@ -304,11 +364,33 @@ final class Monitor {
         storageItems.removeAll { item in
             selection.contains(item.id) && !report.failures.contains { $0.path == item.path }
         }
+        if report.trashedBytes > 0 { growTrash(by: report.trashedBytes) }
         selection = []
         isCleaning = false
         scanProgress = nil
-        statusLine = report.summary
+        statusLine = report.trashedBytes > 0
+            ? "\(Fmt.bytes(report.trashedBytes)) is chilling in the Trash and still takes space. Empty it when you're sure."
+            : report.summary
         disk = Probes.diskSample()
+        ScanCache.save(storageItems)
+    }
+
+    /// Rebuildable items go to the Trash, so the space only comes back once it
+    /// is emptied. Keep the Trash row honest about that.
+    private func growTrash(by bytes: UInt64) {
+        let path = NSHomeDirectory() + "/.Trash"
+        if let index = storageItems.firstIndex(where: { $0.path == path }) {
+            storageItems[index].sizeBytes += bytes
+            storageItems[index].lastTouched = Date()
+        } else if let target = CleanupTarget.all(home: NSHomeDirectory()).first(where: {
+            if case .directory(path) = $0.shape { true } else { false }
+        }) {
+            storageItems.append(CleanupItem(
+                path: path, title: target.title, category: target.category, risk: target.risk,
+                reason: target.reason, sizeBytes: bytes, lastTouched: Date()
+            ))
+        }
+        storageItems.sort { $0.sizeBytes > $1.sizeBytes }
     }
 
     // MARK: Scheduled upkeep

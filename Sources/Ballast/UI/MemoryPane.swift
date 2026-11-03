@@ -61,7 +61,7 @@ struct MemoryPane: View {
                         .foregroundStyle(.secondary)
                 }
             } else {
-                Text("Reading memory statistics…")
+                Text("Checking the vibes…")
                     .font(Theme.body)
                     .foregroundStyle(.secondary)
             }
@@ -84,7 +84,7 @@ struct MemoryPane: View {
 
     private var adviceSection: some View {
         VStack(alignment: .leading, spacing: 9) {
-            SectionHeader("What to do")
+            SectionHeader("The move")
             ForEach(monitor.advice) { item in
                 AdviceRow(advice: item, monitor: monitor, openStorage: openStorage)
             }
@@ -95,14 +95,14 @@ struct MemoryPane: View {
 
     private var appList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "By app") {
+            SectionHeader(title: "Who's eating RAM") {
                 Text("\(monitor.listedGroups.count) over 50 MB")
                     .font(Theme.caption)
                     .foregroundStyle(.secondary)
             }
 
             if monitor.listedGroups.isEmpty {
-                Text("No processes read yet.")
+                Text("Nothing to see yet.")
                     .font(Theme.body)
                     .foregroundStyle(.secondary)
             } else {

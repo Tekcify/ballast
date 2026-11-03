@@ -142,8 +142,11 @@ BALLAST_DIAGNOSTIC=1 /Applications/Ballast.app/Contents/MacOS/Ballast
 | `1` | Prints one memory snapshot and the current advice |
 | `scan` | Dry run of the storage scan: every item, what would be selected and what the guard refuses. Deletes nothing. Add `BALLAST_DEEP=1` to include `node_modules` |
 | `layout` | Lays out each pane offscreen and fails if the popover would collapse |
-| `render` | Renders each pane to `/tmp/ballast-*.png` |
+| `render` | Renders each pane and the heads-up card to `/tmp/ballast-*.png` |
 | `notify` | Sends a test alert and reports which delivery path carried it |
+| `headsup` | Shows the memory heads-up card for ten seconds with pressure faked, so you can see it without running out of memory |
+
+`BALLAST_SELFTEST=headsup` checks the running app instead: monitoring starts without opening the panel, the heads-up card shows and hides, and "Open Ballast" expands it into the full panel. It exits 1 if any of that fails.
 
 Run the `scan` dry run before trusting a cleanup on a new machine.
 

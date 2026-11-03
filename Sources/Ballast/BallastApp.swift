@@ -2,11 +2,16 @@ import SwiftUI
 
 @main
 struct BallastApp: App {
-    @State private var monitor = Monitor()
+    private let monitor: Monitor
 
+    /// Monitoring starts at launch rather than when the panel first opens, so
+    /// alerts and the heads-up card work before Ballast has ever been clicked.
     init() {
         Diagnostic.runIfRequested()
         Theme.registerBundledFont()
+        monitor = Monitor()
+        monitor.start()
+        Diagnostic.selfTestIfRequested(monitor)
     }
 
     var body: some Scene {
@@ -21,7 +26,7 @@ struct BallastApp: App {
 }
 
 private struct MenuBarLabel: View {
-    @Bindable var monitor: Monitor
+    var monitor: Monitor
 
     var body: some View {
         HStack(spacing: 3) {

@@ -27,9 +27,9 @@ actor StorageScanner {
         onItems: @Sendable @escaping ([CleanupItem]) -> Void
     ) async {
         let targets = CleanupTarget.all(home: home, includeDependencies: includeDependencies)
-        onProgress(ScanProgress(stage: "Looking for project build caches", completed: 0, total: 1))
+        onProgress(ScanProgress(stage: "Hunting for build caches", completed: 0, total: 1))
 
-        let liveDirectories = liveWorkingDirectories()
+        let liveDirectories = Probes.liveWorkingDirectories(home: home)
         // One `find` for every searched name, rather than one pass per target.
         let matches = runSearch(for: targets)
         if Task.isCancelled { return }
@@ -43,7 +43,7 @@ actor StorageScanner {
         candidates = dedupe(candidates)
         let total = candidates.count
         var completed = 0
-        onProgress(ScanProgress(stage: "Measuring", completed: 0, total: total))
+        onProgress(ScanProgress(stage: "Sizing things up", completed: 0, total: total))
 
         // Four concurrent `du` calls keep the disk busy without saturating it.
         let batches = stride(from: 0, to: candidates.count, by: 12).map {
@@ -68,7 +68,7 @@ actor StorageScanner {
             for await items in group {
                 if Task.isCancelled { return }
                 completed += items.count
-                onProgress(ScanProgress(stage: "Measuring", completed: completed, total: total))
+                onProgress(ScanProgress(stage: "Sizing things up", completed: completed, total: total))
                 if !items.isEmpty { onItems(items) }
                 addBatch()
             }
@@ -212,12 +212,7 @@ actor StorageScanner {
 
         return batch.compactMap { candidate in
             guard let size = sizes[candidate.path], size >= 1_048_576 else { return nil }
-            var heldBy: String?
-            if candidate.target.guardAgainstLiveProjects, let projectRoot = candidate.projectRoot {
-                heldBy = liveDirectories.first {
-                    $0.key == projectRoot || $0.key.hasPrefix(projectRoot + "/")
-                }?.value
-            }
+            let guarded = candidate.target.guardAgainstLiveProjects ? candidate.projectRoot : nil
             return CleanupItem(
                 path: candidate.path,
                 title: displayTitle(for: candidate),
@@ -225,9 +220,26 @@ actor StorageScanner {
                 risk: candidate.target.risk,
                 reason: candidate.target.reason,
                 sizeBytes: size,
-                heldBy: heldBy
+                heldBy: guarded.flatMap { Probes.holder(of: $0, in: liveDirectories) },
+                lastTouched: lastTouched(candidate.path),
+                projectRoot: guarded
             )
         }
+    }
+
+    /// A folder's own date only moves when its direct entries change, so the
+    /// newest of it and its children is a better read on when it was last used.
+    nonisolated private func lastTouched(_ path: String) -> Date? {
+        let manager = FileManager.default
+        let modified = { (path: String) in
+            (try? manager.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+        }
+        var newest = modified(path)
+        for name in (try? manager.contentsOfDirectory(atPath: path)) ?? [] {
+            guard let date = modified(path + "/" + name) else { continue }
+            if newest.map({ date > $0 }) ?? true { newest = date }
+        }
+        return newest
     }
 
     nonisolated private func displayTitle(for candidate: Candidate) -> String {
@@ -253,16 +265,5 @@ actor StorageScanner {
         let parent = parts[parts.count - 2]
         if parent == (home as NSString).lastPathComponent { return last }
         return "\(parent)/\(last)"
-    }
-
-    /// Working directory of every readable process, used to protect a cache that a
-    /// live dev server is still writing to.
-    private func liveWorkingDirectories() -> [String: String] {
-        var map: [String: String] = [:]
-        for process in Probes.processList() {
-            guard let cwd = Probes.workingDirectory(process.pid), cwd.hasPrefix(home) else { continue }
-            map[cwd] = process.name
-        }
-        return map
     }
 }
