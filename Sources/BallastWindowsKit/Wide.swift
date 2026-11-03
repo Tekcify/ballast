@@ -1,7 +1,7 @@
 import WinSDK
 
 /// Win32 takes text as null-terminated UTF-16 ("wide") strings.
-extension String {
+nonisolated extension String {
     /// This string as a null-terminated UTF-16 buffer, ready to pass as `LPCWSTR`.
     package var wide: [WCHAR] { Array(utf16) + [0] }
 }
