@@ -28,5 +28,6 @@ package nonisolated func writeWide<T>(_ text: String, to field: inout T) {
     }
 }
 
-/// `INVALID_HANDLE_VALUE` is a C macro Swift cannot import.
-package nonisolated let invalidHandleValue = HANDLE(bitPattern: -1)
+/// `INVALID_HANDLE_VALUE` is a C macro Swift cannot import. A computed value,
+/// since a raw pointer cannot be a concurrency-safe global constant.
+package nonisolated var invalidHandleValue: HANDLE? { HANDLE(bitPattern: -1) }
