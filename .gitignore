@@ -1,0 +1,17 @@
+.DS_Store
+.build/
+build/
+.swiftpm/
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+
+.openai/
+AGENTS.md
+AGENT.md
+CLAUDE.md
+CLAUDE.local.md
+CODEX.md
+.cursor/
+.claude/
+setup.sh
