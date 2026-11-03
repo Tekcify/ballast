@@ -30,15 +30,30 @@ The project is a Swift package, so you can also open the folder in Xcode with
 
 ## Project layout
 
+The code is split into a shared core and one app per platform. `BallastCore`
+holds the rules and data types that do not touch the operating system, so a
+future Windows app can build on the same logic. `BallastMac` is the macOS app,
+and `Package.swift` only includes it when building on a Mac.
+
 | Folder | What lives there |
 | --- | --- |
-| `Sources/Ballast/System` | Memory and process probes, app grouping, quitting |
-| `Sources/Ballast/Advisor` | Scores apps and decides what to recommend |
-| `Sources/Ballast/Alerts` | Notification delivery and the fallback path |
-| `Sources/Ballast/Storage` | Cleanup targets, the scanner, the cleaner and `DeletionGuard` |
-| `Sources/Ballast/Model` | The `Monitor` that drives the UI, preferences, login item |
-| `Sources/Ballast/UI` | The SwiftUI panes and shared theme |
-| `Sources/Ballast/Support` | Diagnostics, formatting and the shell helper |
+| `Sources/BallastCore/Advisor` | Scores apps and decides what to recommend |
+| `Sources/BallastCore/Alerts` | `HeadsUpPolicy`, which decides when the heads-up appears |
+| `Sources/BallastCore/Storage` | Cleanup targets, pick rules, `DeletionGuard` and the saved scan |
+| `Sources/BallastCore/System` | Memory, disk and app group data types |
+| `Sources/BallastCore/Model` | Preferences |
+| `Sources/BallastCore/Support` | Formatting |
+| `Sources/BallastMac/System` | macOS memory and process probes, app grouping, quitting |
+| `Sources/BallastMac/Alerts` | The island, the card, and notification delivery |
+| `Sources/BallastMac/Storage` | The scanner and the cleaner |
+| `Sources/BallastMac/Model` | The `Monitor` that drives the UI, login item |
+| `Sources/BallastMac/UI` | The SwiftUI panes and shared theme |
+| `Sources/BallastMac/Support` | Diagnostics and the shell helper |
+
+Core types the apps use are marked `package`, which makes them visible to
+other targets in this package and nowhere else. A new core type or member the
+Mac app needs must be marked `package` too, including an explicit `init` for
+structs, because Swift's automatic one stays internal to the core.
 
 The package uses Swift 6 language mode with the main actor as the default
 isolation. Plain data types read by actors need to be marked `nonisolated`.
@@ -70,7 +85,7 @@ contribution.
 
 ## Adding a cleanup target
 
-Targets live in `Sources/Ballast/Storage/CleanupTarget.swift`. A new target
+Targets live in `Sources/BallastCore/Storage/CleanupTarget.swift`. A new target
 needs:
 
 - a **risk tier** that is honest about the cost of losing it. If removing it
