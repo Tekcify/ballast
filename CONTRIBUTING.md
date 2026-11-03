@@ -55,6 +55,7 @@ BALLAST_DIAGNOSTIC=scan   .build/release/Ballast   # storage dry run, deletes no
 BALLAST_DIAGNOSTIC=layout .build/release/Ballast   # fails if the popover collapses
 BALLAST_DIAGNOSTIC=render .build/release/Ballast   # writes /tmp/ballast-*.png
 BALLAST_DIAGNOSTIC=headsup .build/release/Ballast  # shows the heads-up card for ten seconds
+BALLAST_DIAGNOSTIC=readme .build/release/Ballast   # re-renders the README screenshots into assets/
 swift test                                          # heads-up timing, smart pick, saved scans
 ```
 

@@ -45,6 +45,13 @@ nonisolated struct HeadsUpPolicy: Sendable {
     mutating func snooze(for duration: TimeInterval, now: Date) {
         snoozedUntil = now.addingTimeInterval(duration)
     }
+
+    /// A dismissal starts the cooldown even when the card was shown some other
+    /// way, such as a preview, or it would pop straight back on the next sample.
+    mutating func dismissed(at pressure: Probes.Pressure, now: Date) {
+        lastShownAt = now
+        lastShownLevel = max(lastShownLevel, pressure)
+    }
 }
 
 /// Whether the card has been expanded into the full panel.
@@ -52,13 +59,44 @@ nonisolated struct HeadsUpPolicy: Sendable {
 @Observable
 final class HeadsUpState {
     var expanded = false
+    var pane: Pane = .memory
+}
+
+/// The two looks the heads-up can take: a floating card or the notch island.
+@MainActor
+protocol HeadsUpSurface: AnyObject {
+    /// True while a memory alert is on screen. The island can also be up for
+    /// a scan or the always-on readout, which does not count.
+    var isVisible: Bool { get }
+    var isExpanded: Bool { get }
+    var frame: NSRect? { get }
+    func present()
+    func close()
+    func closeSoon()
+    func cancelClose()
+    /// Shows the full Ballast panel, opened on `pane`.
+    func expand(to pane: Pane)
+    /// Re-reads settings and activity, for surfaces that show more than alerts.
+    func sync()
+    /// Hides everything before the other look takes over.
+    func teardown()
+}
+
+extension HeadsUpSurface {
+    func expand() { expand(to: .memory) }
+}
+
+/// SwiftUI buttons in a window of an inactive app swallow the first click to
+/// focus the window. Heads-up surfaces should act on the first click.
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 /// Floating card shown under the menu bar icon. It never activates Ballast, so
 /// whatever you are typing into keeps focus. "Open Ballast" expands it into the
 /// full panel in place, because SwiftUI's MenuBarExtra cannot be opened from code.
 @MainActor
-final class HeadsUpController {
+final class HeadsUpController: HeadsUpSurface {
     private unowned let monitor: Monitor
     private var panel: HeadsUpWindow?
     private var closeTask: Task<Void, Never>?
@@ -75,12 +113,14 @@ final class HeadsUpController {
     var isExpanded: Bool { state.expanded }
     var frame: NSRect? { panel?.frame }
 
-    func expand() {
+    func expand(to pane: Pane) {
         cancelClose()
+        state.pane = pane
         state.expanded = true
         guard outsideClicks == nil else { return }
-        outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in
-            Task { @MainActor [weak self] in self?.close() }
+        outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in self.close() }
         }
         escapeKey = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return event }
@@ -149,6 +189,10 @@ final class HeadsUpController {
         closeTask = nil
     }
 
+    func sync() {}
+
+    func teardown() { close() }
+
     private func makePanel() -> HeadsUpWindow {
         let panel = HeadsUpWindow(
             contentRect: NSRect(x: 0, y: 0, width: HeadsUpView.width, height: 200),
@@ -172,9 +216,10 @@ final class HeadsUpController {
             onDismiss: { [weak self] in self?.monitor.dismissHeadsUp() },
             onSnooze: { [weak self] in self?.monitor.snoozeHeadsUp() },
             onOpen: { [weak self] in self?.expand() },
+            onStorage: { [weak self] in self?.expand(to: .storage) },
             onSize: { [weak self] size in self?.resize(to: size) }
         )
-        panel.contentView = NSHostingView(rootView: view)
+        panel.contentView = FirstMouseHostingView(rootView: view)
         return panel
     }
 
@@ -237,12 +282,14 @@ private struct HeadsUpRoot: View {
     var onDismiss: () -> Void
     var onSnooze: () -> Void
     var onOpen: () -> Void
+    var onStorage: () -> Void
     var onSize: (CGSize) -> Void
 
     var body: some View {
         Group {
             if state.expanded {
-                PanelView(monitor: monitor)
+                PanelView(monitor: monitor, pane: state.pane)
+                    .id(state.pane)
                     .background(Color(nsColor: .windowBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
@@ -251,7 +298,7 @@ private struct HeadsUpRoot: View {
                     )
                     .fixedSize()
             } else {
-                HeadsUpView(monitor: monitor, onDismiss: onDismiss, onSnooze: onSnooze, onOpen: onOpen)
+                HeadsUpView(monitor: monitor, onDismiss: onDismiss, onSnooze: onSnooze, onOpen: onOpen, onStorage: onStorage)
             }
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { onSize($0) }
@@ -265,6 +312,32 @@ struct HeadsUpView: View {
     var onDismiss: () -> Void
     var onSnooze: () -> Void
     var onOpen: (() -> Void)?
+    var onStorage: (() -> Void)? = nil
+
+    var body: some View {
+        PressureSummary(monitor: monitor, onDismiss: onDismiss, onSnooze: onSnooze, onOpen: onOpen, onStorage: onStorage)
+            .padding(14)
+            .frame(width: Self.width, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.hairline, lineWidth: 1)
+            )
+    }
+}
+
+/// What memory is doing and what to quit, shared by the card and the island.
+struct PressureSummary: View {
+    var monitor: Monitor
+    var onDismiss: () -> Void
+    var onSnooze: () -> Void
+    var onOpen: (() -> Void)?
+    /// Opens the panel on the Storage tab, so disk cleanup is one click away.
+    var onStorage: (() -> Void)? = nil
 
     private var strained: Bool { monitor.pressure > .normal }
 
@@ -323,23 +396,15 @@ struct HeadsUpView: View {
                 HStack(spacing: 8) {
                     QuietButton(title: "Snooze 1h", action: onSnooze)
                     Spacer(minLength: 4)
+                    if let onStorage {
+                        QuietButton(title: "Storage", action: onStorage)
+                    }
                     if let onOpen {
                         PrimaryButton(title: "Open Ballast", action: onOpen)
                     }
                 }
             }
         }
-        .padding(14)
-        .frame(width: Self.width, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.hairline, lineWidth: 1)
-        )
     }
 
     private var headline: String {
@@ -405,7 +470,7 @@ struct HeadsUpView: View {
 }
 
 private struct SuggestionRow: View {
-    var suggestion: HeadsUpView.Suggestion
+    var suggestion: PressureSummary.Suggestion
     var monitor: Monitor
 
     var body: some View {

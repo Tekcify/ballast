@@ -47,6 +47,15 @@ struct HeadsUpPolicyTests {
         #expect(policy.observe(.critical, isVisible: false, now: at(3601)) == .present)
     }
 
+    @Test func dismissingACardShownOutsideThePolicyStartsTheCooldown() {
+        var policy = HeadsUpPolicy()
+        _ = policy.observe(.warning, isVisible: true, now: at(0))
+        policy.dismissed(at: .warning, now: at(1))
+        #expect(policy.observe(.warning, isVisible: false, now: at(5)) == .none)
+        #expect(policy.observe(.warning, isVisible: false, now: at(10)) == .none)
+        #expect(policy.observe(.critical, isVisible: false, now: at(15)) == .present)
+    }
+
     @Test func visibleCardRecoversAfterTwoCalmSamples() {
         var policy = HeadsUpPolicy()
         #expect(policy.observe(.critical, isVisible: false, now: at(0)) == .present)

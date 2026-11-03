@@ -271,6 +271,45 @@ struct Segmented<Value: Hashable>: View {
     }
 }
 
+/// Small labelled stepper. Built here rather than using a native control so the
+/// label, value and buttons sit on one aligned row at the panel's width.
+struct ValueStepper: View {
+    /// Matches the settings window's row titles instead of the popover's quieter labels.
+    var emphasized = false
+    var label: String
+    @Binding var value: Double
+    var range: ClosedRange<Double>
+    var step: Double
+    var format: (Double) -> String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(emphasized ? Theme.font(12.5, 500) : Theme.body)
+                .foregroundStyle(emphasized ? .primary : .secondary)
+            Spacer(minLength: 4)
+            Text(format(value)).font(Theme.number)
+            HStack(spacing: 2) {
+                stepButton("minus") { value = max(range.lowerBound, value - step) }
+                stepButton("plus") { value = min(range.upperBound, value + step) }
+            }
+        }
+    }
+
+    private func stepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Theme.fill)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct PrimaryButton: View {
     var title: String
     var tint: Color = Theme.appMemory

@@ -28,34 +28,84 @@ enum RenderPreview {
             render(card(monitor), to: "/tmp/ballast-headsup.png")
             monitor.pressure = .normal
             render(card(monitor), to: "/tmp/ballast-headsup-recovered.png")
+            for (name, setup) in islandStates(monitor) {
+                setup()
+                render(islandFrame(monitor), to: "/tmp/ballast-island-\(name).png")
+            }
+            monitor.isScanning = false
+            monitor.scanProgress = nil
             monitor.pressure = actual
+
+            let selection = SettingsSelection()
+            for section in [SettingsSection.headsUp, .general] {
+                selection.section = section
+                render(SettingsWindowView(monitor: monitor, selection: selection),
+                       to: "/tmp/ballast-settings-\(section.rawValue.lowercased()).png")
+            }
             print("rendered")
             exit(0)
         }
         RunLoop.main.run()
     }
 
+    private static let island = IslandModel()
+
+    private static func islandStates(_ monitor: Monitor) -> [(String, () -> Void)] {
+        let notch = CGSize(width: 220, height: 38)
+        func set(alert: Bool, expanded: Bool, pressure: Probes.Pressure, scanning: Bool = false) {
+            island.notch = notch
+            island.presented = true
+            island.alert = alert
+            island.expanded = expanded
+            monitor.pressure = pressure
+            monitor.isScanning = scanning
+            monitor.scanProgress = scanning ? ScanProgress(stage: "Sizing things up", completed: 61, total: 170) : nil
+        }
+        return [
+            ("compact", { set(alert: true, expanded: false, pressure: .warning) }),
+            ("expanded", { set(alert: true, expanded: true, pressure: .warning) }),
+            ("scan", { set(alert: false, expanded: false, pressure: .normal, scanning: true) }),
+            ("scan-expanded", { set(alert: false, expanded: true, pressure: .normal, scanning: true) }),
+        ]
+    }
+
+    private static func islandFrame(_ monitor: Monitor) -> some View {
+        IslandView(monitor: monitor, model: island, onToggle: {}, onDismiss: {}, onSnooze: {}, onOpen: {}, onStorage: {})
+            .frame(width: 480, height: island.expanded ? 420 : 70)
+            .background(Color(white: 0.82))
+            .transaction { $0.animation = nil }
+    }
+
     private static func card(_ monitor: Monitor) -> some View {
-        HeadsUpView(monitor: monitor, onDismiss: {}, onSnooze: {}, onOpen: {})
+        HeadsUpView(monitor: monitor, onDismiss: {}, onSnooze: {}, onOpen: {}, onStorage: {})
             .padding(10)
             .background(Color(white: 0.82))
     }
 
-    private static func render(_ view: some View, to path: String) {
-        let renderer = ImageRenderer(content: view.environment(\.staticRender, true))
-        renderer.scale = 2
-        guard let image = renderer.nsImage,
-              let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:])
-        else {
+    /// Draws the view the way a window does, through AppKit. ImageRenderer dims
+    /// any picture that contains an app icon and cannot draw native controls.
+    static func bitmap(_ view: some View, appearance: NSAppearance.Name? = nil) -> NSBitmapImageRep? {
+        let host = NSHostingView(rootView: view.environment(\.staticRender, true))
+        host.frame = NSRect(origin: .zero, size: host.fittingSize)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        if let appearance { window.appearance = NSAppearance(named: appearance) }
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        return rep
+    }
+
+    static func render(_ view: some View, to path: String, appearance: NSAppearance.Name? = nil) {
+        guard let png = bitmap(view, appearance: appearance)?.representation(using: .png, properties: [:]) else {
             print("render failed for \(path)")
             return
         }
         try? png.write(to: URL(fileURLWithPath: path))
     }
 
-    private static func seedStorage(_ monitor: Monitor) {
+    static func seedStorage(_ monitor: Monitor) {
         let home = NSHomeDirectory()
         let day: TimeInterval = 86_400
         let rows: [(String, String, String, Risk, String, UInt64, String?)] = [
@@ -90,7 +140,7 @@ enum RenderPreview {
 }
 
 /// Mirrors PanelView but with the pane fixed, since its selection is local state.
-private struct PanelHost: View {
+struct PanelHost: View {
     var monitor: Monitor
     var pane: Pane
 

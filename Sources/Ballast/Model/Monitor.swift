@@ -19,8 +19,12 @@ final class Monitor {
     var storageItems: [CleanupItem] = []
     var selection: Set<String> = []
     var scanProgress: ScanProgress?
-    var isScanning = false
-    var isCleaning = false
+    var isScanning = false {
+        didSet { if isScanning != oldValue { headsUp?.sync() } }
+    }
+    var isCleaning = false {
+        didSet { if isCleaning != oldValue { headsUp?.sync() } }
+    }
     var lastScanAt: Date? {
         didSet { UserDefaults.standard.set(lastScanAt, forKey: "lastScanAt") }
     }
@@ -44,8 +48,11 @@ final class Monitor {
     private var loop: Task<Void, Never>?
     private let launchedAt = Date()
     private var scanTask: Task<Void, Never>?
-    private(set) var headsUp: HeadsUpController?
+    private(set) var headsUp: (any HeadsUpSurface)?
+    private var headsUpStyle: Preferences.HeadsUpStyle?
     private var headsUpPolicy = HeadsUpPolicy()
+    /// While set, pressure reads as warning so the heads-up can be previewed.
+    private var previewUntil: Date?
 
     // MARK: Lifecycle
 
@@ -53,7 +60,7 @@ final class Monitor {
     /// start the loop once.
     func start() {
         guard loop == nil else { return }
-        headsUp = HeadsUpController(monitor: self)
+        applyHeadsUpSettings()
         alerter.start { [weak self] name, pids in
             Task { @MainActor in await self?.quit(name: name, pids: pids) }
         }
@@ -115,7 +122,7 @@ final class Monitor {
 
         vm = sample.vm
         swap = sample.swap
-        pressure = sample.pressure
+        pressure = (previewUntil.map { sample.at < $0 } ?? false) ? .warning : sample.pressure
         disk = sample.disk
         lastSampledAt = sample.at
 
@@ -208,8 +215,9 @@ final class Monitor {
 
     private func updateHeadsUp(at now: Date) {
         guard let headsUp else { return }
+        headsUp.sync()
         guard prefs.headsUpEnabled else {
-            headsUp.close()
+            if headsUp.isVisible { headsUp.close() }
             return
         }
         switch headsUpPolicy.observe(pressure, isVisible: headsUp.isVisible, now: now) {
@@ -220,7 +228,36 @@ final class Monitor {
     }
 
     func dismissHeadsUp() {
+        headsUpPolicy.dismissed(at: pressure, now: Date())
         headsUp?.close()
+    }
+
+    /// Builds the surface for the chosen look, swapping out the old one, and
+    /// re-reads the island's options.
+    func applyHeadsUpSettings() {
+        if headsUpStyle != prefs.headsUpStyle {
+            headsUp?.teardown()
+            headsUpStyle = prefs.headsUpStyle
+            headsUp = prefs.headsUpStyle == .island
+                ? IslandController(monitor: self)
+                : HeadsUpController(monitor: self)
+        }
+        (headsUp as? IslandController)?.position()
+        headsUp?.sync()
+    }
+
+    /// Shows the heads-up as if memory were getting cooked, for eight seconds.
+    func previewHeadsUp() {
+        applyHeadsUpSettings()
+        previewUntil = Date().addingTimeInterval(8)
+        pressure = .warning
+        headsUp?.present()
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8.5))
+            guard let self, let until = self.previewUntil, Date() >= until else { return }
+            self.previewUntil = nil
+            await self.refresh()
+        }
     }
 
     func snoozeHeadsUp() {

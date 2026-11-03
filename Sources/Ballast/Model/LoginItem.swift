@@ -14,6 +14,27 @@ enum LoginItem {
         return FileManager.default.fileExists(atPath: agentURL.path)
     }
 
+    enum Status {
+        case enabled, needsApproval, off
+    }
+
+    /// macOS can register the item but hold it until you allow it in System
+    /// Settings, which reads as on here but never launches.
+    static var status: Status {
+        if #available(macOS 13, *) {
+            switch SMAppService.mainApp.status {
+            case .enabled: return .enabled
+            case .requiresApproval: return .needsApproval
+            default: break
+            }
+        }
+        return FileManager.default.fileExists(atPath: agentURL.path) ? .enabled : .off
+    }
+
+    static func openSystemSettings() {
+        if #available(macOS 13, *) { SMAppService.openSystemSettingsLoginItems() }
+    }
+
     static func setEnabled(_ enabled: Bool) {
         if #available(macOS 13, *) {
             do {

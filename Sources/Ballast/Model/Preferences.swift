@@ -55,6 +55,75 @@ final class Preferences {
         didSet { defaults.set(rankStorageBySize, forKey: "rankStorageBySize") }
     }
 
+    // MARK: Heads-up look
+
+    enum HeadsUpStyle: String, CaseIterable, Sendable {
+        case island, card
+        var label: String { self == .island ? "Island" : "Card" }
+    }
+
+    enum IslandScreen: String, CaseIterable, Sendable {
+        case notch, menuBar, mouse
+        var label: String {
+            switch self {
+            case .notch: "Notch display"
+            case .menuBar: "Menu bar display"
+            case .mouse: "Wherever my mouse is"
+            }
+        }
+    }
+
+    var headsUpStyle: HeadsUpStyle {
+        didSet { defaults.set(headsUpStyle.rawValue, forKey: "headsUpStyle") }
+    }
+    var islandScreen: IslandScreen {
+        didSet { defaults.set(islandScreen.rawValue, forKey: "islandScreen") }
+    }
+    /// Bottom corner radius of the resting pill. The expanded island adds to it.
+    var islandCornerRadius: Double {
+        didSet { defaults.set(islandCornerRadius, forKey: "islandCornerRadius") }
+    }
+    var islandMatchNotch: Bool {
+        didSet { defaults.set(islandMatchNotch, forKey: "islandMatchNotch") }
+    }
+    var islandWidth: Double {
+        didSet { defaults.set(islandWidth, forKey: "islandWidth") }
+    }
+    var islandHeight: Double {
+        didSet { defaults.set(islandHeight, forKey: "islandHeight") }
+    }
+    var islandExpandOnHover: Bool {
+        didSet { defaults.set(islandExpandOnHover, forKey: "islandExpandOnHover") }
+    }
+    var islandAutoExpand: Bool {
+        didSet { defaults.set(islandAutoExpand, forKey: "islandAutoExpand") }
+    }
+    var islandLiveActivities: Bool {
+        didSet { defaults.set(islandLiveActivities, forKey: "islandLiveActivities") }
+    }
+    var islandAlwaysOn: Bool {
+        didSet { defaults.set(islandAlwaysOn, forKey: "islandAlwaysOn") }
+    }
+    var islandHaptics: Bool {
+        didSet { defaults.set(islandHaptics, forKey: "islandHaptics") }
+    }
+
+    static let islandDefaults = (radius: 12.0, width: 220.0, height: 34.0)
+
+    func resetHeadsUpLook() {
+        headsUpStyle = .island
+        islandScreen = .notch
+        islandCornerRadius = Self.islandDefaults.radius
+        islandMatchNotch = true
+        islandWidth = Self.islandDefaults.width
+        islandHeight = Self.islandDefaults.height
+        islandExpandOnHover = true
+        islandAutoExpand = true
+        islandLiveActivities = true
+        islandAlwaysOn = false
+        islandHaptics = true
+    }
+
     init() {
         refreshSeconds = defaults.object(forKey: "refreshSeconds") as? Double ?? 5
         perAppThresholdGB = defaults.object(forKey: "perAppThresholdGB") as? Double ?? 6
@@ -70,6 +139,17 @@ final class Preferences {
         autoScanHours = defaults.object(forKey: "autoScanHours") as? Double ?? 24
         headsUpEnabled = defaults.object(forKey: "headsUpEnabled") as? Bool ?? true
         rankStorageBySize = defaults.object(forKey: "rankStorageBySize") as? Bool ?? true
+        headsUpStyle = (defaults.string(forKey: "headsUpStyle")).flatMap(HeadsUpStyle.init) ?? .island
+        islandScreen = (defaults.string(forKey: "islandScreen")).flatMap(IslandScreen.init) ?? .notch
+        islandCornerRadius = defaults.object(forKey: "islandCornerRadius") as? Double ?? Self.islandDefaults.radius
+        islandMatchNotch = defaults.object(forKey: "islandMatchNotch") as? Bool ?? true
+        islandWidth = defaults.object(forKey: "islandWidth") as? Double ?? Self.islandDefaults.width
+        islandHeight = defaults.object(forKey: "islandHeight") as? Double ?? Self.islandDefaults.height
+        islandExpandOnHover = defaults.object(forKey: "islandExpandOnHover") as? Bool ?? true
+        islandAutoExpand = defaults.object(forKey: "islandAutoExpand") as? Bool ?? true
+        islandLiveActivities = defaults.object(forKey: "islandLiveActivities") as? Bool ?? true
+        islandAlwaysOn = defaults.object(forKey: "islandAlwaysOn") as? Bool ?? false
+        islandHaptics = defaults.object(forKey: "islandHaptics") as? Bool ?? true
     }
 
     var perAppThresholdBytes: UInt64 { UInt64(perAppThresholdGB * 1_073_741_824) }

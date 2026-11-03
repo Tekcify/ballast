@@ -13,6 +13,7 @@ enum Diagnostic {
         if mode == "notify" { runNotify() }
         if mode == "layout" { runLayout() }
         if mode == "headsup" { runHeadsUp() }
+        if mode == "readme" { ReadmeShots.run() }
         guard mode == "1" else { return }
 
         guard let vm = Probes.vmSample() else {
@@ -191,18 +192,31 @@ enum Diagnostic {
             try? await Task.sleep(for: .milliseconds(600))
             let visible = monitor.headsUp?.isVisible == true
             print("SELFTEST headsup-visible \(visible)")
-            monitor.headsUp?.close()
-            try? await Task.sleep(for: .milliseconds(400))
+            monitor.dismissHeadsUp()
+            try? await Task.sleep(for: .seconds(6))
             let closed = monitor.headsUp?.isVisible == false
             print("SELFTEST headsup-closed \(closed)")
             monitor.headsUp?.present()
             try? await Task.sleep(for: .milliseconds(400))
             monitor.headsUp?.expand()
             try? await Task.sleep(for: .milliseconds(600))
+            let island = monitor.headsUp as? IslandController
+            let panelWidth = Theme.panelWidth + (island == nil ? 0 : 2 * IslandLayout.expandedShoulder)
             let width = monitor.headsUp?.frame?.width ?? 0
-            let expanded = monitor.headsUp?.isExpanded == true && abs(width - Theme.panelWidth) < 2
+            let expanded = monitor.headsUp?.isExpanded == true && abs(width - panelWidth) < 2
+            print("SELFTEST style \(monitor.prefs.headsUpStyle.rawValue)")
             print("SELFTEST expanded-to-panel \(expanded) width \(Int(width)) height \(Int(monitor.headsUp?.frame?.height ?? 0))")
-            failed = !(sampled && button && visible && closed && expanded)
+            var placed = true
+            if let island, let frame = island.frame {
+                let screen = NSScreen.screens.first { $0.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) }
+                let flush = screen.map { abs(frame.maxY - $0.frame.maxY) < 1 && abs(frame.midX - $0.frame.midX) < 1 } ?? false
+                placed = flush
+                print("SELFTEST island-flush-with-notch-centre \(flush) on \(screen?.localizedName ?? "none") notch \(island.model.notch.map { "\(Int($0.width))x\(Int($0.height))" } ?? "none")")
+                island.collapsePanel()
+                try? await Task.sleep(for: .milliseconds(600))
+                print("SELFTEST island-after-collapse \(island.frame.map { NSStringFromRect($0) } ?? "hidden") expanded \(island.model.expanded) hovering \(island.model.hovering) pointer \(NSStringFromPoint(NSEvent.mouseLocation))")
+            }
+            failed = !(sampled && button && visible && closed && expanded && placed)
             exit(failed ? 1 : 0)
         }
     }
