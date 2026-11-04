@@ -108,20 +108,26 @@ internal static class Diagnostics
     private static async Task<int> Quit(StringBuilder o)
     {
         var failures = 0;
-        // This process is attached to the console it was started from. Ignore
-        // Ctrl+C here in case a test process ever ends up sharing it.
+
+        // Children inherit "ignore Ctrl+C", so start the test tools before this
+        // process ignores it for itself.
+        using var signalled = StartConsoleTool();
+        using var gentle = StartConsoleTool();
         Native.SetConsoleCtrlHandler(0, true);
 
-        using (var gentle = StartConsoleTool())
-        {
-            var target = ProcessIdentity.Of(gentle.Id) ?? throw new InvalidOperationException("test process vanished");
-            var outcome = await Quitter.QuitAsync("ping", [target], TimeSpan.FromSeconds(6));
-            var stopped = gentle.WaitForExit(5000);
-            var ok = stopped && !outcome.Forced && outcome.StillRunning == 0;
-            o.AppendLine($"Console tool stops on Ctrl+C: {(ok ? "ok" : "FAILED")} ({outcome.Summary})");
-            if (!ok) failures++;
-            if (!stopped) gentle.Kill();
-        }
+        var sent = await ConsoleInterrupt.SendAsync(signalled.Id);
+        var stoppedBySignal = signalled.WaitForExit(5000);
+        o.AppendLine($"Ctrl+C reaches a windowless console tool: {(sent && stoppedBySignal ? "ok" : "FAILED")} (sent {sent}, stopped {stoppedBySignal})");
+        if (!sent || !stoppedBySignal) failures++;
+        if (!signalled.HasExited) signalled.Kill();
+
+        var target = ProcessIdentity.Of(gentle.Id) ?? throw new InvalidOperationException("test process vanished");
+        var outcome = await Quitter.QuitAsync("ping", [target], TimeSpan.FromSeconds(6));
+        var stopped = gentle.WaitForExit(5000);
+        var gentleOk = stopped && !outcome.Forced && outcome.StillRunning == 0;
+        o.AppendLine($"Quitting it stops it without forcing: {(gentleOk ? "ok" : "FAILED")} ({outcome.Summary})");
+        if (!gentleOk) failures++;
+        if (!gentle.HasExited) gentle.Kill();
 
         using (var bystander = StartConsoleTool())
         {
