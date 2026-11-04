@@ -1,0 +1,65 @@
+<UserControl x:Class="Ballast.UI.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+            <Setter Property="Margin" Value="0,14,0,6" />
+        </Style>
+    </UserControl.Resources>
+    <StackPanel>
+        <TextBlock Text="SETTINGS" Style="{StaticResource T.Section}" />
+
+        <CheckBox Style="{StaticResource C.Switch}" Margin="0,12,0,0" IsChecked="{Binding StartAtLogin}" Content="Start Ballast when I sign in" />
+        <TextBlock Text="{Binding LoginNote}" Style="{StaticResource T.Caption}" Foreground="#FFC67A2E" Margin="44,4,0,0"
+                   Visibility="{Binding LoginNote, Converter={StaticResource Visible}}" />
+        <CheckBox Style="{StaticResource C.Switch}" Margin="0,10,0,0" IsChecked="{Binding HeadsUpEnabled}" Content="Heads-up when memory gets cooked" />
+        <CheckBox Style="{StaticResource C.Switch}" Margin="0,10,0,0" IsChecked="{Binding AutoScanEnabled}" Content="Scan storage once a day in the background" />
+
+        <Border Style="{StaticResource Hairline}" Margin="0,14,0,0" />
+
+        <TextBlock Text="Suggest quitting apps that use more than" Style="{StaticResource Label}" />
+        <Border Style="{StaticResource SegmentTrack}" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal">
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Threshold" Content="2 GB" IsChecked="{Binding PerAppThresholdGB, Converter={StaticResource Equals}, ConverterParameter=2}" />
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Threshold" Content="4 GB" IsChecked="{Binding PerAppThresholdGB, Converter={StaticResource Equals}, ConverterParameter=4}" />
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Threshold" Content="6 GB" IsChecked="{Binding PerAppThresholdGB, Converter={StaticResource Equals}, ConverterParameter=6}" />
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Threshold" Content="8 GB" IsChecked="{Binding PerAppThresholdGB, Converter={StaticResource Equals}, ConverterParameter=8}" />
+            </StackPanel>
+        </Border>
+
+        <TextBlock Text="Call an app idle after" Style="{StaticResource Label}" />
+        <Border Style="{StaticResource SegmentTrack}" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal">
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Idle" Content="10 min" IsChecked="{Binding IdleMinutes, Converter={StaticResource Equals}, ConverterParameter=10}" />
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Idle" Content="20 min" IsChecked="{Binding IdleMinutes, Converter={StaticResource Equals}, ConverterParameter=20}" />
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Idle" Content="1 hour" IsChecked="{Binding IdleMinutes, Converter={StaticResource Equals}, ConverterParameter=60}" />
+            </StackPanel>
+        </Border>
+
+        <TextBlock Text="Warn when free disk drops under" Style="{StaticResource Label}" />
+        <Border Style="{StaticResource SegmentTrack}" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal">
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Disk" Content="10 GB" IsChecked="{Binding LowDiskGB, Converter={StaticResource Equals}, ConverterParameter=10}" />
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Disk" Content="20 GB" IsChecked="{Binding LowDiskGB, Converter={StaticResource Equals}, ConverterParameter=20}" />
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Disk" Content="50 GB" IsChecked="{Binding LowDiskGB, Converter={StaticResource Equals}, ConverterParameter=50}" />
+            </StackPanel>
+        </Border>
+
+        <TextBlock Text="Check memory every" Style="{StaticResource Label}" />
+        <Border Style="{StaticResource SegmentTrack}" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal">
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Refresh" Content="2 sec" IsChecked="{Binding RefreshSeconds, Converter={StaticResource Equals}, ConverterParameter=2}" />
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Refresh" Content="5 sec" IsChecked="{Binding RefreshSeconds, Converter={StaticResource Equals}, ConverterParameter=5}" />
+                <RadioButton Style="{StaticResource R.Segment}" GroupName="Refresh" Content="10 sec" IsChecked="{Binding RefreshSeconds, Converter={StaticResource Equals}, ConverterParameter=10}" />
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource Hairline}" Margin="0,16,0,12" />
+        <DockPanel LastChildFill="False">
+            <TextBlock DockPanel.Dock="Left" Text="{Binding Version}" Style="{StaticResource T.Faint}" VerticalAlignment="Center" />
+            <Button DockPanel.Dock="Right" Content="Cleanup log and data" Command="{Binding OpenData}" Style="{StaticResource B.Quiet}" />
+        </DockPanel>
+    </StackPanel>
+</UserControl>

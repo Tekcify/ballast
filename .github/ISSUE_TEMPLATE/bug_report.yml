@@ -27,13 +27,13 @@ body:
     id: diagnostic
     attributes:
       label: Diagnostic output
-      description: Output of `BALLAST_DIAGNOSTIC=1` (memory) or `BALLAST_DIAGNOSTIC=scan` (storage), if relevant. Trim personal paths if you like.
+      description: 'Memory snapshot or storage dry run, if relevant. Windows: `Ballast.exe --diagnostic snapshot` or `--diagnostic scan`. Mac: `BALLAST_DIAGNOSTIC=1` or `BALLAST_DIAGNOSTIC=scan`. Trim personal paths if you like.'
       render: text
   - type: input
-    id: macos
+    id: os
     attributes:
-      label: macOS version
-      placeholder: macOS 15.4 on an M2 Pro
+      label: Windows or macOS version
+      placeholder: Windows 11 24H2 on x64, or macOS 15.4 on an M2 Pro
     validations:
       required: true
   - type: input

@@ -1,0 +1,15 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Color x:Key="BgColor">#FF242426</Color>
+    <SolidColorBrush x:Key="Bg" Color="#FF242426" />
+    <SolidColorBrush x:Key="Stroke" Color="#FF3B3B3F" />
+    <SolidColorBrush x:Key="Ink" Color="#FFF3F3F5" />
+    <SolidColorBrush x:Key="Ink2" Color="#FFA3A3AA" />
+    <SolidColorBrush x:Key="Ink3" Color="#FF6E6E75" />
+    <SolidColorBrush x:Key="Fill" Color="#14FFFFFF" />
+    <SolidColorBrush x:Key="FillHover" Color="#1FFFFFFF" />
+    <SolidColorBrush x:Key="Hairline" Color="#1AFFFFFF" />
+    <SolidColorBrush x:Key="Track" Color="#22FFFFFF" />
+    <SolidColorBrush x:Key="SwitchOff" Color="#FF4A4A4F" />
+    <SolidColorBrush x:Key="Knob" Color="#FFF3F3F5" />
+</ResourceDictionary>

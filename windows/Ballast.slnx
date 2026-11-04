@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ballast.Core/Ballast.Core.csproj" />
+    <Project Path="src/Ballast/Ballast.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ballast.Core.Tests/Ballast.Core.Tests.csproj" />
+  </Folder>
+</Solution>

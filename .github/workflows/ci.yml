@@ -24,3 +24,31 @@ jobs:
         run: swift build -c release
       - name: Bundle without installing
         run: ./build.sh --no-install
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Test
+        run: dotnet test windows/tests/Ballast.Core.Tests -c Release
+      - name: Publish x64
+        run: dotnet publish windows/src/Ballast/Ballast.csproj -c Release -r win-x64 -o out/win-x64
+      - name: Publish ARM64
+        run: dotnet publish windows/src/Ballast/Ballast.csproj -c Release -r win-arm64 -o out/win-arm64
+      - name: Diagnostic snapshot
+        shell: pwsh
+        run: |
+          $env:BALLAST_DIAGNOSTIC_OUT = "$PWD/snapshot.txt"
+          $run = Start-Process out/win-x64/Ballast.exe -ArgumentList '--diagnostic','snapshot' -Wait -PassThru
+          Get-Content snapshot.txt
+          if ($run.ExitCode -ne 0) { exit $run.ExitCode }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ballast-windows
+          path: |
+            out/win-x64/Ballast.exe
+            out/win-arm64/Ballast.exe

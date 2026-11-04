@@ -5,6 +5,9 @@ build/
 *.xcodeproj/
 xcuserdata/
 DerivedData/
+bin/
+obj/
+*.user
 
 .openai/
 AGENTS.md
