@@ -329,7 +329,7 @@ final class IslandController: HeadsUpSurface {
             onStorage: { [weak self] in self?.expand(to: .storage) },
             onRect: { [weak self] rect in self?.reportRect(rect) }
         )
-        window.contentView = FirstMouseHostingView(rootView: view)
+        window.contentView = FirstMouseHostingView(rootView: AnyView(view))
         return window
     }
 

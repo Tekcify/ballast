@@ -88,7 +88,11 @@ extension HeadsUpSurface {
 
 /// SwiftUI buttons in a window of an inactive app swallow the first click to
 /// focus the window. Heads-up surfaces should act on the first click.
-final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+///
+/// It hosts `AnyView` rather than being generic because the Swift 6.3
+/// optimizer crashes specializing a generic `NSHostingView` subclass's deinit
+/// in release builds.
+final class FirstMouseHostingView: NSHostingView<AnyView> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
@@ -219,7 +223,7 @@ final class HeadsUpController: HeadsUpSurface {
             onStorage: { [weak self] in self?.expand(to: .storage) },
             onSize: { [weak self] size in self?.resize(to: size) }
         )
-        panel.contentView = FirstMouseHostingView(rootView: view)
+        panel.contentView = FirstMouseHostingView(rootView: AnyView(view))
         return panel
     }
 
