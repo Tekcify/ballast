@@ -97,6 +97,18 @@ internal static class Probes
         return windows;
     }
 
+    /// <summary>The processes that own the given windows.</summary>
+    public static HashSet<int> WindowOwners(IEnumerable<nint> windows)
+    {
+        var owners = new HashSet<int>();
+        foreach (var hwnd in windows)
+        {
+            Native.GetWindowThreadProcessId(hwnd, out var pid);
+            owners.Add(pid);
+        }
+        return owners;
+    }
+
     private static bool IsAppWindow(nint hwnd)
     {
         if (!Native.IsWindowVisible(hwnd)) return false;

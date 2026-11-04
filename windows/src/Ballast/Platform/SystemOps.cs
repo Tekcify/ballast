@@ -18,52 +18,182 @@ internal sealed record QuitOutcome(string Name, int Requested, int StillRunning,
     }
 }
 
+/// <summary>
+/// Quits an app the way Windows itself asks: close its windows so it can save,
+/// send Ctrl+C to console tools that have no window, and only after the grace
+/// period end what is still running. Every process is checked by pid and start
+/// time first, so a pid Windows has since handed to another process is never
+/// touched.
+/// </summary>
 internal static class Quitter
 {
-    public static async Task<QuitOutcome> QuitAsync(string name, IReadOnlyList<int> pids, TimeSpan grace)
+    public static async Task<QuitOutcome> QuitAsync(string name, IReadOnlyList<ProcessRef> processes, TimeSpan grace)
     {
+        var states = processes.Select(p => (Process: p, State: ProcessIdentity.Check(p))).ToList();
+        var live = states.Where(s => s.State != ProcessState.Gone).Select(s => s.Process).ToList();
+        var ours = states.Where(s => s.State == ProcessState.Running).Select(s => s.Process).ToList();
+        if (live.Count == 0) return new QuitOutcome(name, processes.Count, 0, false, false);
+
+        var pids = ours.Select(p => p.Pid).ToList();
         var windows = Probes.AppWindows(pids);
         foreach (var hwnd in windows) Native.PostMessage(hwnd, Native.WmClose, 0, 0);
 
-        if (windows.Count > 0) await Task.Delay(grace);
-
-        var remaining = pids.Where(IsAlive).ToList();
-        if (remaining.Count == 0) return new QuitOutcome(name, pids.Count, 0, false, false);
-
-        if (Probes.AppWindows(remaining).Count > 0)
-            return new QuitOutcome(name, pids.Count, remaining.Count, false, true);
-
-        foreach (var pid in remaining)
+        var windowed = Probes.WindowOwners(windows);
+        var interrupted = 0;
+        foreach (var process in ours.Where(p => !windowed.Contains(p.Pid)))
         {
-            try
-            {
-                using var process = Process.GetProcessById(pid);
-                process.Kill();
-            }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception or NotSupportedException)
-            {
-            }
+            if (await ConsoleInterrupt.SendAsync(process.Pid)) interrupted++;
         }
-        await Task.Delay(TimeSpan.FromSeconds(1));
-        remaining = remaining.Where(IsAlive).ToList();
-        return new QuitOutcome(name, pids.Count, remaining.Count, true, false);
+
+        if (windows.Count > 0 || interrupted > 0) await WaitForExitAsync(live, grace);
+
+        var remaining = live.Where(p => ProcessIdentity.Check(p) != ProcessState.Gone).ToList();
+        if (remaining.Count == 0) return new QuitOutcome(name, processes.Count, 0, false, false);
+
+        // Still showing a window usually means a "save changes?" prompt.
+        if (Probes.AppWindows(remaining.Select(p => p.Pid).ToList()).Count > 0)
+            return new QuitOutcome(name, processes.Count, remaining.Count, false, true);
+
+        var forced = false;
+        foreach (var process in remaining) forced |= ProcessIdentity.Terminate(process);
+        if (forced) await Task.Delay(TimeSpan.FromSeconds(1));
+
+        remaining = remaining.Where(p => ProcessIdentity.Check(p) != ProcessState.Gone).ToList();
+        return new QuitOutcome(name, processes.Count, remaining.Count, forced, false);
     }
 
-    private static bool IsAlive(int pid)
+    /// <summary>Waits out the grace period, or less if everything has already exited.</summary>
+    private static async Task WaitForExitAsync(IReadOnlyList<ProcessRef> processes, TimeSpan grace)
+    {
+        var deadline = DateTime.UtcNow + grace;
+        while (DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(250);
+            if (processes.All(p => ProcessIdentity.Check(p) == ProcessState.Gone)) return;
+        }
+    }
+}
+
+internal enum ProcessState
+{
+    /// <summary>Exited, or its pid now belongs to a different process.</summary>
+    Gone,
+    /// <summary>The same process, and Ballast may act on it.</summary>
+    Running,
+    /// <summary>Running, but Windows will not let Ballast open it.</summary>
+    Untouchable,
+}
+
+internal static class ProcessIdentity
+{
+    /// <summary>The identity of a running process, for callers that only have a pid.</summary>
+    public static ProcessRef? Of(int pid)
+    {
+        var handle = Native.OpenProcess(Native.ProcessQueryLimitedInformation, false, pid);
+        if (handle == 0) return null;
+        try
+        {
+            return IsRunning(handle) && Native.GetProcessTimes(handle, out var created, out _, out _, out _)
+                ? new ProcessRef(pid, DateTime.FromFileTimeUtc(created))
+                : null;
+        }
+        finally
+        {
+            Native.CloseHandle(handle);
+        }
+    }
+
+    public static ProcessState Check(ProcessRef process)
+    {
+        var handle = Native.OpenProcess(Native.ProcessQueryLimitedInformation, false, process.Pid);
+        if (handle == 0)
+        {
+            return Marshal.GetLastWin32Error() == Native.ErrorInvalidParameter
+                ? ProcessState.Gone
+                : ProcessState.Untouchable;
+        }
+        try
+        {
+            return Matches(handle, process) ? ProcessState.Running : ProcessState.Gone;
+        }
+        finally
+        {
+            Native.CloseHandle(handle);
+        }
+    }
+
+    /// <summary>
+    /// Ends the process, re-checking its identity through the same handle that
+    /// terminates it, so the pid cannot change hands in between.
+    /// </summary>
+    public static bool Terminate(ProcessRef process)
+    {
+        var handle = Native.OpenProcess(Native.ProcessTerminate | Native.ProcessQueryLimitedInformation, false, process.Pid);
+        if (handle == 0) return false;
+        try
+        {
+            return Matches(handle, process) && Native.TerminateProcess(handle, 1);
+        }
+        finally
+        {
+            Native.CloseHandle(handle);
+        }
+    }
+
+    private static bool Matches(nint handle, ProcessRef process) =>
+        IsRunning(handle)
+        && Native.GetProcessTimes(handle, out var created, out _, out _, out _)
+        && DateTime.FromFileTimeUtc(created) == process.StartedAtUtc;
+
+    private static bool IsRunning(nint handle) =>
+        Native.GetExitCodeProcess(handle, out var code) && code == Native.StillActive;
+}
+
+/// <summary>
+/// Sends Ctrl+C to the console a process runs in, the same as pressing it in
+/// that terminal, so tools like dev servers can shut down cleanly. A process
+/// can only signal a console it is attached to, so a short-lived copy of
+/// Ballast attaches and sends it, which keeps this process's own console
+/// untouched. Everything attached to that console receives it.
+/// </summary>
+internal static class ConsoleInterrupt
+{
+    public const string Flag = "--interrupt";
+
+    public static async Task<bool> SendAsync(int pid)
     {
         try
         {
-            using var process = Process.GetProcessById(pid);
-            return !process.HasExited;
+            var start = new ProcessStartInfo(StartupItem.ExecutablePath, $"{Flag} {pid}")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var helper = Process.Start(start);
+            if (helper is null) return false;
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await helper.WaitForExitAsync(timeout.Token);
+            return helper.ExitCode == 0;
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or OperationCanceledException)
         {
             return false;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
-        {
-            return true;
-        }
+    }
+
+    /// <summary>Runs in the helper copy. Exit code 0 means Ctrl+C was sent.</summary>
+    public static int RunHelper(string[] args)
+    {
+        var index = Array.IndexOf(args, Flag);
+        if (index < 0 || index + 1 >= args.Length || !int.TryParse(args[index + 1], out var pid)) return 2;
+
+        Native.FreeConsole();
+        if (!Native.AttachConsole(pid)) return 1;
+        // Ignore the Ctrl+C ourselves, then send it to everything on that console.
+        Native.SetConsoleCtrlHandler(0, true);
+        var sent = Native.GenerateConsoleCtrlEvent(Native.CtrlCEvent, 0);
+        Native.FreeConsole();
+        return sent ? 0 : 1;
     }
 }
 

@@ -38,6 +38,8 @@ On Windows, click the tray icon to open it. If Windows tucks the icon into the o
 
 **Memory.** A live breakdown of what's using your RAM, with apps grouped together so Chrome's dozens of helper processes show up as one row. Under "The move", Ballast suggests what to quit, based on how much an app uses, how long since you touched it, and whether its memory keeps climbing. It won't suggest anything the system needs, and it won't tell you to quit the app you're using unless things are critical.
 
+Quitting asks nicely first: apps get their windows closed so they can save, and on Windows a console tool like a dev server gets Ctrl+C, just like pressing it in its terminal. Only what's still running after a few seconds is ended, and anything still showing a window, usually a "save changes?" prompt, is left for you. Before ending anything, Ballast checks the process is the same one it saw, since Windows reuses process IDs. Windows services never get a Quit button; Ballast points you to the Services app instead.
+
 **A heads-up.** When memory runs low, Ballast tells you without stealing focus. On Windows a small card appears above the tray. On a Mac it drops out of the notch. Dismiss it and it stays quiet for 15 minutes, or snooze it for an hour.
 
 **Storage.** One scan finds developer caches and ranks them biggest first: npm, pnpm, Yarn, Bun, pip, uv, Go, Cargo, Gradle, Maven, NuGet, Playwright, Xcode, Next.js, Turbo, Vite and more, plus temp files and the Recycle Bin or Trash. **Smart pick** ticks the safe ones for you.
@@ -55,7 +57,7 @@ Every cache gets a tier:
 
 On top of that:
 
-- Ballast only deletes inside your home folder, apart from emptying the Recycle Bin or Trash when you pick it. Documents, Desktop, Pictures, OneDrive, `.git`, `.ssh` and AI assistant folders are always off limits.
+- Ballast only deletes inside your home folder, apart from emptying the Recycle Bin or Trash when you pick it. Documents, Desktop, Pictures, OneDrive, `.git`, `.ssh` and AI assistant folders are always off limits. A project cache inside one of them, say a Next.js cache in a project on your Desktop, still shows up so you know the space is there, but it's listed as Kept and never ticked.
 - A project with a running dev server keeps its cache. Ballast checks again right before deleting.
 - Anything written to in the last 10 minutes is never picked for you.
 - Every deletion is logged, so you can see exactly what went.

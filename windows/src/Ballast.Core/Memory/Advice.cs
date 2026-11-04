@@ -22,7 +22,7 @@ public sealed record Advice
     public Severity Severity { get; init; }
     public AdviceKind Kind { get; init; }
     public string? QuitName { get; init; }
-    public IReadOnlyList<int> QuitPids { get; init; } = [];
+    public IReadOnlyList<ProcessRef> QuitProcesses { get; init; } = [];
     public ulong ReclaimBytes { get; init; }
     public bool IsSystemWide { get; init; }
 }

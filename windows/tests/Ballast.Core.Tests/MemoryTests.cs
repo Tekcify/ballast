@@ -92,6 +92,33 @@ public class GroupingTests
         Assert.True(groups[1].IsFrontmost);
         Assert.True(Grouping.IsEssential(groups[2]));
         Assert.False(groups[2].CanQuit);
+        Assert.Equal([new ProcessRef(10, Now.AddMinutes(-10)), new ProcessRef(11, Now.AddMinutes(-11)), new ProcessRef(12, Now.AddMinutes(-12))],
+            browser.Processes);
+    }
+
+    [Fact]
+    public void ServicesOutsideTheWindowsFolderCannotBeQuit()
+    {
+        var groups = Grouping.Build(
+            [Proc(30, "sqlservr.exe", @"C:\Program Files\Microsoft SQL Server\MSSQL\Binn\sqlservr.exe", 2048, session: 0)],
+            new Dictionary<int, WindowPresence>(),
+            foregroundPid: null,
+            describe: _ => "SQL Server",
+            Now);
+
+        var service = Assert.Single(groups);
+        Assert.True(service.IsSystemOwned);
+        Assert.False(Grouping.IsEssential(service));
+        Assert.False(service.CanQuit);
+
+        var advice = Advisor.Advise(new AdvisorInput
+        {
+            Memory = new MemorySample { TotalBytes = 16UL << 30, AvailableBytes = 1UL << 30, CommitBytes = 12UL << 30, CommitLimitBytes = 32UL << 30 },
+            Groups = groups,
+        }, new Settings(), Now);
+        var quit = Assert.Single(advice, a => a.Id.StartsWith("quit:", StringComparison.Ordinal));
+        Assert.Equal(AdviceKind.None, quit.Kind);
+        Assert.Contains("Services app", quit.Detail);
     }
 }
 

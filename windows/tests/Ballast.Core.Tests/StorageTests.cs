@@ -282,7 +282,35 @@ public class ScannerTests
             var item = Assert.Single(found, i => i.Category == "Project builds");
             Assert.Equal("code/web · .next\\cache", item.Title);
             Assert.Equal(2_000_000UL, item.SizeBytes);
+            Assert.Equal(Risk.Safe, item.Risk);
             Assert.True(WinPath.SameAs(Path.Combine(home, "code", "web"), item.ProjectRoot!));
+        }
+        finally
+        {
+            Directory.Delete(home, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CachesTheGuardWouldRefuseAreShownButNeverOffered()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var home = Path.Combine(Path.GetTempPath(), "ballast-home-" + Guid.NewGuid());
+        var cache = Path.Combine(home, "Desktop", "web", ".next", "cache");
+        Directory.CreateDirectory(cache);
+        await File.WriteAllBytesAsync(Path.Combine(cache, "blob"), new byte[2_000_000]);
+        try
+        {
+            var found = new List<CleanupItem>();
+            await new StorageScanner(KnownFolders.ForHome(home), new Probe())
+                .ScanAsync(false, _ => { }, items => { lock (found) found.AddRange(items); }, CancellationToken.None);
+
+            var item = Assert.Single(found, i => i.Category == "Project builds");
+            Assert.Equal(Risk.ReportOnly, item.Risk);
+            Assert.False(item.IsSelectable);
+            Assert.False(item.IsSmartPick(DateTime.UtcNow.AddDays(60)));
+            Assert.Contains("inside Desktop, which Ballast never deletes from", item.Reason);
         }
         finally
         {

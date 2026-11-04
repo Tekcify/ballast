@@ -128,6 +128,11 @@ public static class Advisor
 
             if (group.IsSystemOwned && !group.IsRunningApp) score *= 0.4;
 
+            if (!group.CanQuit)
+            {
+                clauses.Add("it runs as a Windows service, so stop it from the Services app if you don't need it");
+            }
+
             if (Grouping.HoldsLiveState.Contains(group.ProcessName))
             {
                 score *= 0.5;
@@ -148,7 +153,7 @@ public static class Advisor
                 Severity = c.IsLeak || pressure > Pressure.Normal ? Severity.Warning : Severity.Info,
                 Kind = c.Group.CanQuit ? AdviceKind.Quit : AdviceKind.None,
                 QuitName = c.Group.Name,
-                QuitPids = c.Group.Pids,
+                QuitProcesses = c.Group.Processes,
                 ReclaimBytes = c.Group.MemoryBytes,
             })
             .ToArray();

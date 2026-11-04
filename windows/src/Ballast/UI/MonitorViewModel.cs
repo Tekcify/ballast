@@ -288,7 +288,7 @@ public sealed class MonitorViewModel : Observable
         switch (advice.Kind)
         {
             case AdviceKind.Quit:
-                _ = QuitAsync(advice.QuitName ?? "That app", advice.QuitPids);
+                _ = QuitAsync(advice.QuitName ?? "That app", advice.QuitProcesses);
                 break;
             case AdviceKind.OpenStorage:
                 RequestPane(Pane.Storage);
@@ -296,12 +296,12 @@ public sealed class MonitorViewModel : Observable
         }
     }
 
-    private void QuitGroup(AppGroup group) => _ = QuitAsync(group.Name, group.Pids);
+    private void QuitGroup(AppGroup group) => _ = QuitAsync(group.Name, group.Processes);
 
-    public async Task QuitAsync(string name, IReadOnlyList<int> pids)
+    public async Task QuitAsync(string name, IReadOnlyList<ProcessRef> processes)
     {
         QuitStatus = $"Asking {name} to quit…";
-        var outcome = await Quitter.QuitAsync(name, pids, TimeSpan.FromSeconds(6));
+        var outcome = await Quitter.QuitAsync(name, processes, TimeSpan.FromSeconds(6));
         QuitStatus = outcome.Summary;
         await SampleAsync();
     }

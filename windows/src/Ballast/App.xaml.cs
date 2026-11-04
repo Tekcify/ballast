@@ -22,6 +22,13 @@ public partial class App : Application
         base.OnStartup(e);
         var args = e.Args;
 
+        // A short-lived copy started by Quitter to send Ctrl+C to a console app.
+        if (args.Contains(ConsoleInterrupt.Flag))
+        {
+            Shutdown(ConsoleInterrupt.RunHelper(args));
+            return;
+        }
+
         var diagnostic = Array.IndexOf(args, "--diagnostic");
         if (diagnostic >= 0)
         {
