@@ -47,9 +47,12 @@ nonisolated enum IslandLayout {
     }
 
     /// The part of the pill that sits over the notch: the notch itself, or the
-    /// size you set when you would rather not match it.
+    /// size you set when you would rather not match it. A custom size never
+    /// shrinks below a real notch, or the readouts would sit behind the camera.
     static func core(notch: CGSize?, matchNotch: Bool, custom: CGSize) -> CGSize {
-        matchNotch ? (notch ?? fallbackCore) : custom
+        if matchNotch { return notch ?? fallbackCore }
+        guard let notch else { return custom }
+        return CGSize(width: max(custom.width, notch.width), height: max(custom.height, notch.height))
     }
 
     static func compactSize(core: CGSize, wing: CGFloat = defaultWing) -> CGSize {

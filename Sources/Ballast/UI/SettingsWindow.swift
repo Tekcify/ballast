@@ -481,7 +481,7 @@ private struct HeadsUpSettings: View {
             let core = IslandLayout.fallbackCore
             return "No notch on your displays, so matching uses \(Int(core.width)) × \(Int(core.height)) pt."
         }
-        return "Found a \(Int(notch.size.width)) × \(Int(notch.size.height)) pt notch on \(notch.name)."
+        return "Found a \(Int(notch.size.width)) × \(Int(notch.size.height)) pt notch on \(notch.name). The island never goes smaller than it, so the readouts stay visible."
     }
 }
 

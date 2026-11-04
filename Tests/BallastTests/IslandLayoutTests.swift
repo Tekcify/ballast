@@ -18,7 +18,18 @@ struct IslandLayoutTests {
         let custom = CGSize(width: 180, height: 30)
         #expect(IslandLayout.core(notch: notch, matchNotch: true, custom: custom) == notch)
         #expect(IslandLayout.core(notch: nil, matchNotch: true, custom: custom) == IslandLayout.fallbackCore)
-        #expect(IslandLayout.core(notch: notch, matchNotch: false, custom: custom) == custom)
+        #expect(IslandLayout.core(notch: nil, matchNotch: false, custom: custom) == custom)
+        let wide = CGSize(width: 260, height: 44)
+        #expect(IslandLayout.core(notch: notch, matchNotch: false, custom: wide) == wide)
+    }
+
+    @Test func customSizeNeverHidesTheReadoutsBehindTheNotch() {
+        let notch = CGSize(width: 220, height: 38)
+        let core = IslandLayout.core(notch: notch, matchNotch: false, custom: CGSize(width: 120, height: 38))
+        #expect(core == notch)
+        let pill = IslandLayout.compactSize(core: core)
+        #expect((pill.width - notch.width) / 2 >= IslandLayout.defaultWing)
+        #expect(IslandLayout.core(notch: notch, matchNotch: false, custom: CGSize(width: 260, height: 30)) == CGSize(width: 260, height: 38))
     }
 
     @Test func restingPillWrapsTheCoreWithTwoWings() {
