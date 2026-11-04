@@ -15,6 +15,12 @@ public sealed record RawProcess
 
 public readonly record struct WindowPresence(bool HasWindow, bool AllMinimized);
 
+/// <summary>
+/// A process pinned down by its pid and the moment it started. Windows reuses
+/// pids, so quitting checks both before it touches anything.
+/// </summary>
+public readonly record struct ProcessRef(int Pid, DateTime StartedAtUtc);
+
 public sealed record AppGroup
 {
     public required string Id { get; init; }
@@ -22,6 +28,7 @@ public sealed record AppGroup
     public required string ProcessName { get; init; }
     public string? ExecutablePath { get; init; }
     public IReadOnlyList<int> Pids { get; init; } = [];
+    public IReadOnlyList<ProcessRef> Processes { get; init; } = [];
     public ulong MemoryBytes { get; init; }
     public double CpuPercent { get; init; }
     public bool IsApproximate { get; init; }
@@ -33,7 +40,11 @@ public sealed record AppGroup
 
     public int ProcessCount => Pids.Count;
 
-    public bool CanQuit => ExecutablePath is not null && !Grouping.IsEssential(this);
+    /// <summary>
+    /// Services and other system processes are left alone: a standard user
+    /// cannot end them, and a quit button that always fails is worse than none.
+    /// </summary>
+    public bool CanQuit => ExecutablePath is not null && !IsSystemOwned && !Grouping.IsEssential(this);
 }
 
 public static class Grouping
@@ -94,6 +105,7 @@ public static class Grouping
             }
 
             bucket.Pids.Add(process.Pid);
+            bucket.Processes.Add(new ProcessRef(process.Pid, process.StartedAt));
             bucket.Memory += process.MemoryBytes;
             bucket.Cpu += process.CpuPercent;
             bucket.Approximate |= process.MemoryIsApproximate;
@@ -121,6 +133,7 @@ public static class Grouping
                     ProcessName = b.Stem,
                     ExecutablePath = b.Path,
                     Pids = b.Pids.OrderBy(p => p).ToArray(),
+                    Processes = b.Processes.OrderBy(p => p.Pid).ToArray(),
                     MemoryBytes = b.Memory,
                     CpuPercent = b.Cpu,
                     IsApproximate = b.Approximate,
@@ -140,6 +153,7 @@ public static class Grouping
         public string Stem { get; } = stem;
         public string? Path { get; } = path;
         public List<int> Pids { get; } = [];
+        public List<ProcessRef> Processes { get; } = [];
         public ulong Memory;
         public double Cpu;
         public bool Approximate;

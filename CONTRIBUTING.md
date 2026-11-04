@@ -37,7 +37,9 @@ dotnet publish windows/src/Ballast/Ballast.csproj -c Release -r win-x64
 
 On Windows, `windows\build.ps1 -NoInstall` builds without installing, and
 `Ballast.exe --diagnostic snapshot`, `scan` and `headsup` are the same checks as
-the Mac diagnostic modes. Rules that decide what gets deleted belong in
+the Mac diagnostic modes. `--diagnostic quit` quits throwaway console processes
+to check that Ctrl+C stops them cleanly and that a reused pid is never touched;
+CI runs it on every push. Rules that decide what gets deleted belong in
 `Ballast.Core` with a test next to them.
 
 ## The Mac app

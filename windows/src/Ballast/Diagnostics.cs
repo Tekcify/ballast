@@ -26,8 +26,11 @@ internal static class Diagnostics
                 case "headsup":
                     await HeadsUp(output);
                     break;
+                case "quit":
+                    code = await Quit(output);
+                    break;
                 default:
-                    output.AppendLine($"Unknown mode '{mode}'. Use snapshot, scan or headsup.");
+                    output.AppendLine($"Unknown mode '{mode}'. Use snapshot, scan, headsup or quit.");
                     code = 2;
                     break;
             }
@@ -95,6 +98,55 @@ internal static class Diagnostics
         }
         var picked = items.Where(i => i.IsSmartPick(now)).Aggregate(0UL, (s, i) => s + i.SizeBytes);
         o.AppendLine($"Smart pick would clear {Fmt.Bytes(picked)} of {Fmt.Bytes(items.Aggregate(0UL, (s, i) => s + i.SizeBytes))} found.");
+    }
+
+    /// <summary>
+    /// Quits throwaway console processes to check the quitter end to end: a
+    /// windowless console tool should stop on Ctrl+C without being forced, and
+    /// a pid paired with the wrong start time must be left alone.
+    /// </summary>
+    private static async Task<int> Quit(StringBuilder o)
+    {
+        var failures = 0;
+        // This process is attached to the console it was started from. Ignore
+        // Ctrl+C here in case a test process ever ends up sharing it.
+        Native.SetConsoleCtrlHandler(0, true);
+
+        using (var gentle = StartConsoleTool())
+        {
+            var target = ProcessIdentity.Of(gentle.Id) ?? throw new InvalidOperationException("test process vanished");
+            var outcome = await Quitter.QuitAsync("ping", [target], TimeSpan.FromSeconds(6));
+            var stopped = gentle.WaitForExit(5000);
+            var ok = stopped && !outcome.Forced && outcome.StillRunning == 0;
+            o.AppendLine($"Console tool stops on Ctrl+C: {(ok ? "ok" : "FAILED")} ({outcome.Summary})");
+            if (!ok) failures++;
+            if (!stopped) gentle.Kill();
+        }
+
+        using (var bystander = StartConsoleTool())
+        {
+            var real = ProcessIdentity.Of(bystander.Id) ?? throw new InvalidOperationException("test process vanished");
+            var stale = real with { StartedAtUtc = real.StartedAtUtc.AddMinutes(-5) };
+            await Quitter.QuitAsync("ping", [stale], TimeSpan.FromSeconds(1));
+            var ok = !bystander.HasExited;
+            o.AppendLine($"Reused pid is left alone: {(ok ? "ok" : "FAILED")}");
+            if (!ok) failures++;
+            if (!bystander.HasExited) bystander.Kill();
+        }
+
+        return failures == 0 ? 0 : 1;
+    }
+
+    private static System.Diagnostics.Process StartConsoleTool()
+    {
+        var start = new System.Diagnostics.ProcessStartInfo("ping.exe", "-n 120 127.0.0.1")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        var process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("couldn't start ping");
+        Thread.Sleep(500);
+        return process;
     }
 
     private static async Task HeadsUp(StringBuilder o)

@@ -46,6 +46,13 @@ jobs:
           $run = Start-Process out/win-x64/Ballast.exe -ArgumentList '--diagnostic','snapshot' -Wait -PassThru
           Get-Content snapshot.txt
           if ($run.ExitCode -ne 0) { exit $run.ExitCode }
+      - name: Quit check
+        shell: pwsh
+        run: |
+          $env:BALLAST_DIAGNOSTIC_OUT = "$PWD/quit.txt"
+          $run = Start-Process out/win-x64/Ballast.exe -ArgumentList '--diagnostic','quit' -Wait -PassThru
+          Get-Content quit.txt
+          if ($run.ExitCode -ne 0) { exit $run.ExitCode }
       - uses: actions/upload-artifact@v4
         with:
           name: Ballast-windows

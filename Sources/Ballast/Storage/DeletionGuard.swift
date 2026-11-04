@@ -60,11 +60,15 @@ nonisolated struct DeletionGuard: Sendable {
         let path = URL(fileURLWithPath: rawPath).standardizedFileURL.resolvingSymlinksInPath().path
         let root = URL(fileURLWithPath: home).resolvingSymlinksInPath().path
 
-        guard path.hasPrefix(root + "/") else { return "outside the home folder" }
         guard path != root else { return "the home folder itself" }
+        guard path.hasPrefix(root + "/") else { return "outside the home folder" }
 
         let relative = path.dropFirst(root.count + 1).split(separator: "/").map(String.init)
-        guard relative.count >= 2 else { return "too close to the top of the home folder" }
+        // ~/.Trash is the one depth-one exception. The cleaner only ever empties
+        // its contents, it never removes the folder itself.
+        guard relative.count >= 2 || relative == [".Trash"] else {
+            return "too close to the top of the home folder"
+        }
         guard let first = relative.first else { return "unreadable path" }
 
         // .Trash is the one depth-one exception, and only its contents are removed.
@@ -89,5 +93,13 @@ nonisolated struct DeletionGuard: Sendable {
         // Contents of a trashed or child-measured root.
         if exactRoots.contains(parent) { return true }
         return false
+    }
+
+    /// How a scanned item should be offered. Anything the guard would refuse at
+    /// clean time, such as a project cache under ~/Desktop or ~/Documents, is
+    /// still measured but kept, so it is never ticked and then refused.
+    func offer(_ risk: Risk, reason: String, for path: String) -> (risk: Risk, reason: String) {
+        guard risk.isSelectable, let refusal = rejection(for: path) else { return (risk, reason) }
+        return (.reportOnly, "Shown so you know it's there, but Ballast won't clear it: \(refusal).")
     }
 }

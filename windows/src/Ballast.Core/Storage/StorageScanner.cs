@@ -99,6 +99,14 @@ public sealed class StorageScanner(KnownFolders folders, IStorageProbe probe)
 {
     private const ulong MinimumSize = 1_048_576;
 
+    /// <summary>
+    /// The same guard the cleaner uses. A cache the guard would refuse, such as a
+    /// project under Desktop or Documents, is still measured but listed as kept,
+    /// so it is never ticked and then refused at clean time.
+    /// </summary>
+    private readonly DeletionGuard _guard =
+        new(folders.Home, CleanupTarget.All(folders, includeDependencies: true), probe.IsLink);
+
     private static readonly HashSet<string> SkipAtTop = new(StringComparer.OrdinalIgnoreCase)
     {
         "AppData", "Pictures", "Music", "Videos", "Saved Games", "Favorites", "Contacts", "Links",
@@ -319,13 +327,21 @@ public sealed class StorageScanner(KnownFolders folders, IStorageProbe probe)
         if (size < MinimumSize) return null;
         var guarded = target.GuardAgainstLiveProjects ? candidate.ProjectRoot : null;
 
+        var risk = target.Risk;
+        var reason = target.Reason;
+        if (risk.IsSelectable() && target.Shape != ShapeKind.RecycleBin && _guard.Rejection(candidate.Path) is { } refusal)
+        {
+            risk = Risk.ReportOnly;
+            reason = $"Shown so you know it's there, but Ballast won't clear it: {refusal}.";
+        }
+
         return new CleanupItem
         {
             Path = candidate.Path,
             Title = DisplayTitle(candidate),
             Category = target.Category,
-            Risk = target.Risk,
-            Reason = target.Reason,
+            Risk = risk,
+            Reason = reason,
             SizeBytes = size,
             HeldBy = guarded is null ? null : LiveProjects.Holder(guarded, live),
             LastTouched = touched,

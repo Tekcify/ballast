@@ -9,6 +9,10 @@ internal static unsafe class Native
     public const uint ProcessQueryLimitedInformation = 0x1000;
     public const uint ProcessQueryInformation = 0x0400;
     public const uint ProcessVmRead = 0x0010;
+    public const uint ProcessTerminate = 0x0001;
+    public const uint StillActive = 259;
+    public const int ErrorInvalidParameter = 87;
+    public const uint CtrlCEvent = 0;
     public const int GwOwner = 4;
     public const int GwlExStyle = -20;
     public const long WsExToolWindow = 0x00000080;
@@ -176,6 +180,24 @@ internal static unsafe class Native
 
     [DllImport("kernel32.dll")]
     public static extern bool AttachConsole(int pid);
+
+    [DllImport("kernel32.dll")]
+    public static extern bool FreeConsole();
+
+    [DllImport("kernel32.dll")]
+    public static extern bool SetConsoleCtrlHandler(nint handler, bool add);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GenerateConsoleCtrlEvent(uint ctrlEvent, uint processGroupId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetProcessTimes(nint process, out long creation, out long exit, out long kernel, out long user);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetExitCodeProcess(nint process, out uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool TerminateProcess(nint process, uint exitCode);
 
     [DllImport("user32.dll")]
     public static extern bool EnumWindows(EnumWindowsProc callback, nint lParam);

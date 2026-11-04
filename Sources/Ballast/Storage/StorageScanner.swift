@@ -18,8 +18,16 @@ actor StorageScanner {
 
     private let home: String
     private let fileManager = FileManager.default
+    /// The same guard the cleaner uses, so nothing is offered that cleaning
+    /// would then refuse.
+    private let guardrail: DeletionGuard
 
-    init(home: String = NSHomeDirectory()) { self.home = home }
+    init(home: String = NSHomeDirectory()) {
+        self.home = home
+        self.guardrail = DeletionGuard(
+            home: home, targets: CleanupTarget.all(home: home, includeDependencies: true)
+        )
+    }
 
     func scan(
         includeDependencies: Bool = false,
@@ -213,12 +221,15 @@ actor StorageScanner {
         return batch.compactMap { candidate in
             guard let size = sizes[candidate.path], size >= 1_048_576 else { return nil }
             let guarded = candidate.target.guardAgainstLiveProjects ? candidate.projectRoot : nil
+            let offer = guardrail.offer(
+                candidate.target.risk, reason: candidate.target.reason, for: candidate.path
+            )
             return CleanupItem(
                 path: candidate.path,
                 title: displayTitle(for: candidate),
                 category: candidate.target.category,
-                risk: candidate.target.risk,
-                reason: candidate.target.reason,
+                risk: offer.risk,
+                reason: offer.reason,
                 sizeBytes: size,
                 heldBy: guarded.flatMap { Probes.holder(of: $0, in: liveDirectories) },
                 lastTouched: lastTouched(candidate.path),
